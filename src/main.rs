@@ -218,7 +218,7 @@ async fn query_sites(
                 return Err(PrismError::PoisonedMutex(e.to_string()));
             }
             Ok(tasks) => {
-                post_query(tasks, sites.clone().into_iter().collect()).await?;
+                post_query(tasks, sites.clone().into_iter().collect()).await?
             }
         }
     }
