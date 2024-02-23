@@ -30,11 +30,11 @@ const CLAP_FOOTER: &str = "For proxy support, environment variables HTTP_PROXY, 
     after_help(CLAP_FOOTER)
 )]
 struct CliArgs {
-    /// The beam proxy's base URL, e.g. https://proxy1.beam.samply.de
+    /// The beam proxy's base URL, e.g. https://proxy1.broker.samply.de
     #[clap(long, env, value_parser)]
     beam_proxy_url: Url,
 
-    /// This application's beam AppId, e.g. focus.proxy1.broker.samply.de
+    /// This application's beam AppId, e.g. prism.proxy1.broker.samply.de
     #[clap(long, env, value_parser)]
     beam_app_id_long: String,
 
@@ -46,7 +46,7 @@ struct CliArgs {
     #[clap(long, env, value_parser)]
     sites: String,
 
-    /// Number of retries for reaching the beam proxy and FHIR server, respectively
+    /// Wait for results count
     #[clap(long, env, value_parser, default_value = "32")]
     wait_count: usize,
 

@@ -6,7 +6,10 @@ pub type CriteriaGroup = BTreeMap<String, Criteria>;
 
 pub type CriteriaGroups = BTreeMap<String, CriteriaGroup>;
 
-pub fn combine_maps(map1: Criteria, map2: Criteria) -> Criteria {
+// groups of groups of criteria follow the measure report structure
+// for example criteria "female", "male", "other", and "unknown" belong to the group "gender", and the group "gender" together with the group "age" belongs to the group of groups "patient"
+
+fn combine_maps(map1: Criteria, map2: Criteria) -> Criteria { // here individual criteria are combined and their numbers added, for example 2 maps of gender criteria (see test)
     let mut combined_map = map1;
     for (key, value) in map2 {
         *combined_map.entry(key).or_insert(0) += value;
@@ -14,7 +17,7 @@ pub fn combine_maps(map1: Criteria, map2: Criteria) -> Criteria {
     combined_map
 }
 
-pub fn combine_criteria_groups(group1: CriteriaGroup, group2: CriteriaGroup) -> CriteriaGroup {
+fn combine_criteria_groups(group1: CriteriaGroup, group2: CriteriaGroup) -> CriteriaGroup { // here criteria groups are combined in a way that criteria maps having the same key are combined, for example 2 maps of patients
     let mut combined_group = group1;
 
     for (key, criteria) in group2 {
@@ -31,8 +34,8 @@ pub fn combine_criteria_groups(group1: CriteriaGroup, group2: CriteriaGroup) -> 
     combined_group
 }
 
-pub fn combine_groups_of_criteria_groups(groups1: CriteriaGroups, groups2: CriteriaGroups) -> CriteriaGroups {
-    let mut combined_groups = groups1;
+pub fn combine_groups_of_criteria_groups(groups1: CriteriaGroups, groups2: CriteriaGroups) -> CriteriaGroups { // here groups of criteria groups are combined in a way that groups of criteria groups are combined using the previous function
+    let mut combined_groups = groups1; // this function is used to combine maps for all the sites
 
     for (key, criteria_group) in groups2 {
         let maybe_criteria_group = combined_groups.get(&key);

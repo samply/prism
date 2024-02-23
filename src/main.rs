@@ -47,10 +47,10 @@ static BEAM_CLIENT: Lazy<BeamClient> = Lazy::new(|| {
 });
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct LensQuery {
-    id: MsgId,
-    sites: Vec<String>,
-    query: String,
+struct LensQuery { // kept it the same as in spot, but only sites needed
+    id: MsgId, // prism ignores this and creates its own
+    sites: Vec<String>, //TODO: coordinate with Lens team to introduce a new type of lens query with sites only
+    query: String, // prism ignores this and uses the default query for the project
 }
 
 type Site = String;
@@ -60,7 +60,11 @@ type Created = std::time::SystemTime; //epoch
 struct CriteriaCache {
     cache: HashMap<Site, (CriteriaGroups, Created)>,
 }
-const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //24h
+const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //cached criteria expire after 24h
+
+type Attempts = usize;
+
+const MAX_ATTEMPTS: usize = 3; // maximum number of attempts to get results for each task
 
 #[derive(Clone)]
 struct SharedState {
@@ -71,19 +75,31 @@ struct SharedState {
 
 #[tokio::main]
 pub async fn main() {
-    //🏳️‍🌈⃤
-    //it is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important
-    //at start prism sends a task to BHs in command line parameter and populates the cache
-    //when lens sends a query, prism adds up results for BHs in the request which it has in cache and sends them to lens
-    //prism sends queries to BHs from the request it doesn't have in cache (or are expired) and updates the cache
+    /*
+    🏳️‍🌈⃤
+    Prism returns cumulative positive numbers of each of individual criteria defined in CQL queries and Measures at sites it is queried about.
+    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. It doesn't return criteria for which there are no results. It can't return results for range types. 
+    
+    It is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important.
+    At start prism sends a task to BHs in command line parameter and populates the cache.
+    When lens sends a query, prism adds up results for BHs in the request which are present in cache (and not expired) and sends them to lens.
+    Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set. In a parallel process a task for all sites in the set is periodically sent to beam. 
+    After a task is sent successfully its task id is added to the list of tasks for which Prism needs to get the results. That list also stores how many times Prism has attempted to get the results for each task.
+    In another parallel process beam is asked for results for all the tasks in the list of tasks. 
+    Successfully retrieved results are cached. In case of an error, the number of attempts in the list for the task id is increased, provided that it's not higher than the maximum number of attempts, otherwise task id is removed from the list.
+    */
 
-    let criteria_cache: CriteriaCache = CriteriaCache {
+    // TODO: start a thread/process/worker for posting tasks to beam
+    // TODO: start a thread/process/worker for getting results from beam and processing them
+    // TODO: handle errors in main
+
+    let criteria_cache: CriteriaCache = CriteriaCache { //stores criteria for CRITERIACACHE_TTL to avoid querying the sites and processing results too often
         cache: HashMap::new(),
     };
 
-    let sites_to_query: HashSet<String> = HashSet::new();
+    let sites_to_query: HashSet<String> = HashSet::new(); //accumulates sites to query, those for which Lens asked for criteria, and they either weren't cached or the cache had expired, emptied when task to sites sent
 
-    let tasks: HashMap<MsgId, usize> = HashMap::new();
+    let tasks: HashMap<MsgId, Attempts> = HashMap::new(); //accumulates IDs of tasks sent and the numbers of attempts of getting the results of them, emptied when results gotten or the maximum number of attempts exceeded 
 
     let shared_state = SharedState {
         criteria_cache: Arc::new(Mutex::new(criteria_cache)),
@@ -103,7 +119,7 @@ pub async fn main() {
     info!("{:#?}", &CONFIG);
     // TODO: check if beam up, if not exit
 
-    let result = query_sites(&shared_state, Some(&CONFIG.sites)).await;
+    let result = query_sites(&shared_state, Some(&CONFIG.sites)).await; // querying sites from configuration to populate the cache at start
 
     match result {
         Ok(()) => {}
@@ -119,7 +135,7 @@ pub async fn main() {
         .allow_headers([header::CONTENT_TYPE]);
 
     let app = Router::new()
-        .route("/criteria", post(handle_get_criteria))
+        .route("/criteria", post(handle_get_criteria)) //here Lens asks for criteria for sites in its configuration
         .with_state(shared_state)
         .layer(cors);
 
@@ -136,13 +152,13 @@ async fn handle_get_criteria(
     State(shared_state): State<SharedState>,
     Json(query): Json<LensQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new();
+    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new(); // this is going to be aggregated criteria for all the sites
 
     for site in query.clone().sites {
         let criteria_groups_from_cache =
             match shared_state.criteria_cache.lock().await.cache.get(&site) {
                 Some(cached) => {
-                    //we only use the cached results if they are not expired
+                    //Prism only uses the cached results if they are not expired
                     if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
                         Some(cached.0.clone())
                     } else {
@@ -152,10 +168,10 @@ async fn handle_get_criteria(
                 None => None,
             };
 
-            if let Some(cached_criteria_groups) = criteria_groups_from_cache {
-                criteria_groups = combine_groups_of_criteria_groups(criteria_groups, cached_criteria_groups);
-            } else {
-                shared_state.sites_to_query.lock().await.insert(site);
+            if let Some(cached_criteria_groups) = criteria_groups_from_cache { //cached and not expired
+                criteria_groups = combine_groups_of_criteria_groups(criteria_groups, cached_criteria_groups); // adding all the criteria to the ones already in criteria_groups
+            } else {    //not cached or expired
+                shared_state.sites_to_query.lock().await.insert(site); // inserting the site into the set of sites to query
             }
     }
 
@@ -180,7 +196,7 @@ async fn post_query(
         .await
         .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
 
-    tasks.insert(task.id, 0);
+    tasks.insert(task.id, 0); // if beam task is successfully created, its id is added to the list of tasks to get the results of
 
     Ok(())
 }
@@ -191,14 +207,14 @@ async fn query_sites(
 ) -> Result<(), PrismError> {
 
 match sites{
-        Some(sites) => {
+        Some(sites) => { // argument site is present, Prism uses it and ignores sites from the shared state
             post_query(shared_state.tasks.lock().await, sites).await?;
         },
-        None => {
+        None => { // Prism queries sites from the shared state
             let mut locked_sites = shared_state.sites_to_query.lock().await;
             let sites: Vec<String> = locked_sites.clone().into_iter().collect();
             post_query(shared_state.tasks.lock().await, &sites).await?;
-            locked_sites.clear();
+            locked_sites.clear(); // if posting the task was successful, the set of sites to query is emptied
         }
     };
 
@@ -212,15 +228,15 @@ async fn get_results(shared_state: SharedState) -> Result<(), PrismError> {
         let processed = process_results(task.0, &mut shared_state.criteria_cache.lock().await).await;
         match processed {
             Ok(()) => {
-                locked_tasks.remove(&task.0);
+                locked_tasks.remove(&task.0); // results received and cached, task id removed from the list
             }
             Err(e) => {
                 error!("There has been an error getting results for task {}. Error: {}", task.0, e);
 
-                if task.1 > 3 {
-                    locked_tasks.remove(&task.0); // 3 attempts enough, could even be 1
+                if task.1 > MAX_ATTEMPTS - 1 {
+                    locked_tasks.remove(&task.0); // results not received, but max number of attempts reached, task id removed from the list
                 } else {
-                    locked_tasks.entry(task.0).and_modify(|e| *e += 1);
+                    locked_tasks.entry(task.0).and_modify(|e| *e += 1); // results not received, max number of attempts not reached, the number of attempts in the list is increased
                 }
             }
         }
@@ -273,10 +289,10 @@ async fn process_results(
 
     let measure_report = measure_report_result?;
 
-    let criteria = mr::extract_criteria(measure_report)?;
+    let criteria = mr::extract_criteria(measure_report)?; // extracting criteria from measure report
 
-    criteria_cache.cache.insert(
-        task_result.from.app_name().into(),
+    criteria_cache.cache.insert( //if successful caching the criteria
+        task_result.from.app_name().into(), // extracting site name from app long name
         (criteria, std::time::SystemTime::now()),
     );
 
