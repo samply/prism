@@ -103,7 +103,7 @@ pub async fn main() {
     info!("{:#?}", &CONFIG);
     // TODO: check if beam up, if not exit
 
-    let result = query_sites(shared_state, Some(CONFIG.sites)).await;
+    let result = query_sites(&shared_state, Some(&CONFIG.sites)).await;
 
     match result {
         Ok(()) => {}
@@ -195,7 +195,7 @@ async fn handle_get_criteria(
 
 async fn post_query(
     mut tasks: std::sync::MutexGuard<'_, HashMap<MsgId, usize>>,
-    sites: Vec<String>,
+    sites: &[impl ToString],
 ) -> Result<(), PrismError> {
     let task = create_beam_task(sites);
     BEAM_CLIENT
@@ -209,8 +209,8 @@ async fn post_query(
 }
 
 async fn query_sites(
-    shared_state: SharedState,
-    sites: Option<Vec<String>>,
+    shared_state: &SharedState,
+    sites: Option<&[impl ToString]>,
 ) -> Result<(), PrismError> {
     if let Some(sites) = sites {
         match shared_state.tasks.lock() {
@@ -219,7 +219,7 @@ async fn query_sites(
                 return Err(PrismError::PoisonedMutex(e.to_string()));
             }
             Ok(tasks) => {
-                post_query(tasks, sites.clone().into_iter().collect()).await?;
+                post_query(tasks, sites).await?;
             }
         }
     }
@@ -236,7 +236,8 @@ async fn query_sites(
                     return Err(PrismError::PoisonedMutex(e.to_string()));
                 }
                 Ok(tasks) => {
-                    post_query(tasks, sites_to_query.clone().into_iter().collect()).await?;
+                    let sites: Vec<_> = sites_to_query.clone().into_iter().collect();
+                    post_query(tasks, &sites).await?;
                     sites_to_query.clear(); //only if no error
                 }
             }
