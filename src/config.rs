@@ -1,4 +1,4 @@
-use std::{fs};
+use std::fs;
 
 use beam_lib::AppId;
 use clap::Parser;
@@ -7,7 +7,7 @@ use tracing::{debug, info};
 
 use std::net::SocketAddr;
 
-use reqwest::{header::InvalidHeaderValue, Url};
+use reqwest::Url;
 use tower_http::cors::AllowOrigin;
 
 use crate::errors::PrismError;
@@ -109,7 +109,7 @@ fn get_query() -> String {
 }
 
 
-fn parse_cors(v: &str) -> Result<AllowOrigin, InvalidHeaderValue> {
+fn parse_cors(v: &str) -> Result<AllowOrigin, http::header::InvalidHeaderValue> {
     if v == "*" || v.to_lowercase() == "any" {
         Ok(AllowOrigin::any())
     } else {

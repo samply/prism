@@ -14,9 +14,9 @@ use std::time::SystemTime;
 
 use axum::{
     extract::State, 
-    http::{header, HeaderValue, StatusCode},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::post,
     Json, 
     Router,
 };
@@ -24,13 +24,13 @@ use axum::{
 use base64::engine::general_purpose;
 use base64::Engine as _;
 use once_cell::sync::Lazy;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::util::SubscriberInitExt;
 
 use beam::create_beam_task;
 use beam_lib::{BeamClient, MsgId};
 use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
-use reqwest::Method;
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn, Level};
@@ -103,7 +103,7 @@ pub async fn main() {
     info!("{:#?}", &CONFIG);
     // TODO: check if beam up, if not exit
 
-    let result = query_sites(shared_state, Some(CONFIG.sites)).await;
+    let result = query_sites(&shared_state, Some(&CONFIG.sites)).await;
 
     match result {
         Ok(()) => {}
@@ -114,7 +114,7 @@ pub async fn main() {
     }
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([http::Method::GET, http::Method::POST])
         .allow_origin(CONFIG.cors_origin.clone())
         .allow_headers([header::CONTENT_TYPE]);
 
@@ -123,13 +123,14 @@ pub async fn main() {
         .with_state(shared_state)
         .layer(cors);
 
-    axum::Server::bind(&CONFIG.bind_addr)
-        .serve(app.into_make_service())
+    let tcp_listener = tokio::net::TcpListener::bind(CONFIG.bind_addr).await
+        .expect("Unable to bind to listen port");
+
+    axum::serve(tcp_listener, app.into_make_service())
         .await
         .unwrap();
 }
 
-#[axum_macros::debug_handler]
 async fn handle_get_criteria(
     State(shared_state): State<SharedState>,
     Json(query): Json<LensQuery>,
@@ -194,7 +195,7 @@ async fn handle_get_criteria(
 
 async fn post_query(
     mut tasks: std::sync::MutexGuard<'_, HashMap<MsgId, usize>>,
-    sites: Vec<String>,
+    sites: &[impl ToString],
 ) -> Result<(), PrismError> {
     let task = create_beam_task(sites);
     BEAM_CLIENT
@@ -208,8 +209,8 @@ async fn post_query(
 }
 
 async fn query_sites(
-    shared_state: SharedState,
-    sites: Option<Vec<String>>,
+    shared_state: &SharedState,
+    sites: Option<&[impl ToString]>,
 ) -> Result<(), PrismError> {
     if let Some(sites) = sites {
         match shared_state.tasks.lock() {
@@ -218,7 +219,7 @@ async fn query_sites(
                 return Err(PrismError::PoisonedMutex(e.to_string()));
             }
             Ok(tasks) => {
-                post_query(tasks, sites.clone().into_iter().collect()).await?
+                post_query(tasks, sites).await?
             }
         }
     }
@@ -235,7 +236,8 @@ async fn query_sites(
                     return Err(PrismError::PoisonedMutex(e.to_string()));
                 }
                 Ok(tasks) => {
-                    post_query(tasks, sites_to_query.clone().into_iter().collect()).await?;
+                    let sites: Vec<_> = sites_to_query.clone().into_iter().collect();
+                    post_query(tasks, &sites).await?;
                     sites_to_query.clear(); //only if no error
                 }
             }
@@ -259,7 +261,7 @@ async fn get_results(shared_state: SharedState) -> Result<(), PrismError> {
                 }
                 Ok(mut criteria_cache) => {
                     for task in tasks.clone().into_iter() {
-                        let processed = process_task(task.0, &mut criteria_cache).await;
+                        let processed = process_results(task.0, &mut criteria_cache).await;
                         match processed {
                             Ok(()) => {
                                 tasks.remove(&task.0);
@@ -283,15 +285,15 @@ async fn get_results(shared_state: SharedState) -> Result<(), PrismError> {
     Ok(())
 }
 
-async fn process_task(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result<(), PrismError> {
+async fn process_results(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result<(), PrismError> {
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
             &format!("v1/tasks/{}/results?wait_count={}", task, CONFIG.wait_count),
         )
         .header(
-            header::ACCEPT,
-            HeaderValue::from_static("text/event-stream"),
+            http_old::header::ACCEPT,
+            http_old::HeaderValue::from_static("text/event-stream"),
         )
         .send()
         .await
@@ -315,7 +317,7 @@ async fn process_task(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result
 
     let decoded: Result<Vec<u8>, PrismError> = general_purpose::STANDARD
         .decode(task_result.body.into_string())
-        .map_err(|e| PrismError::DecodeError(e));
+        .map_err(PrismError::DecodeError);
 
     let vector = decoded?;
 

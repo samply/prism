@@ -1,7 +1,7 @@
 use crate::config::CONFIG;
 use beam_lib::{AppId, MsgId, RawString, TaskRequest};
 
-pub fn create_beam_task(target_sites: Vec<String>) -> TaskRequest<RawString> {
+pub fn create_beam_task(target_sites: &[impl ToString]) -> TaskRequest<RawString> {
     let id = MsgId::new();
     let proxy_id = &CONFIG.beam_app_id_long.proxy_id();
     let broker_id = proxy_id
@@ -11,7 +11,10 @@ pub fn create_beam_task(target_sites: Vec<String>) -> TaskRequest<RawString> {
         .1;
     let to = target_sites
         .iter()
-        .map(|site| AppId::new_unchecked(format!("focus.{site}.{broker_id}")))
+        .map(|site| {
+            let site = site.to_string();
+            AppId::new_unchecked(format!("focus.{site}.{broker_id}"))
+        })
         .collect();
     let metadata = {
         serde_json::json!({

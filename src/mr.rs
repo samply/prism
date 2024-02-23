@@ -115,7 +115,7 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups,
 
                 criteria.insert(stratum_key, value);
             }
-            criteria_group.insert(criteria_key.into(), criteria);
+            criteria_group.insert(criteria_key, criteria);
         }
         criteria_groups.insert(criteria_group_key.into(), criteria_group);
     }
