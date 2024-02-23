@@ -1,11 +1,9 @@
 use crate::{
-    criteria::{self, Criteria, CriteriaGroup},
+    criteria::{Criteria, CriteriaGroup, CriteriaGroups},
     errors::PrismError,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::io::{self, BufRead, BufReader};
-use tracing::warn;
+use serde_json::Value;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,31 +88,37 @@ struct Stratifier {
     stratum: Vec<Stratum>,
 }
 
-pub fn extract_criteria(measure_report: MeasureReport) -> Result<Vec<CriteriaGroup>, PrismError> {
-    let mut criteria_groups: Vec<CriteriaGroup> = Vec::new();
+pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups, PrismError> {
+    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new();
 
     for g in &measure_report.group {
         let mut criteria_group = CriteriaGroup::new();
-        let key = &g.code.text[..];
+        let criteria_group_key = &g.code.text[..];
 
         for s in &g.stratifier {
             let mut criteria = Criteria::new();
 
-            let key = &s.code.get(0).unwrap().text[..];
+            let criteria_key = s
+                .code
+                .first()
+                .ok_or_else(|| PrismError::ParsingError("Missing criterion key".into()))?
+                .text
+                .clone();
 
             for stratum in &s.stratum {
-                let key = stratum.value.text.clone();
-                let value = stratum.population.get(0).unwrap().count;
+                let stratum_key = stratum.value.text.clone();
+                let value = stratum
+                    .population
+                    .first()
+                    .ok_or_else(|| PrismError::ParsingError("Missing criterion count".into()))?
+                    .count;
 
-                criteria.insert(key, value);
+                criteria.insert(stratum_key, value);
             }
-
-            criteria_group.insert(key.to_string(), criteria);
+            criteria_group.insert(criteria_key.into(), criteria);
         }
-
-        criteria_groups.push(criteria_group);
+        criteria_groups.insert(criteria_group_key.into(), criteria_group);
     }
-
     Ok(criteria_groups)
 }
 
@@ -122,7 +126,6 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<Vec<CriteriaGro
 mod test {
 
     use super::*;
-    use serde_json::json;
 
     const EXAMPLE_MEASURE_REPORT_BBMRI: &str =
         include_str!("../resources/test/measure_report_bbmri.json");
@@ -130,12 +133,10 @@ mod test {
         include_str!("../resources/test/criteria_groups_bbmri.json");
     const EXAMPLE_MEASURE_REPORT_DKTK: &str =
         include_str!("../resources/test/measure_report_dktk.json");
-    const CRITERIA_GROUPS_DKTK: &str =
-        include_str!("../resources/test/criteria_groups_dktk.json");
+    const CRITERIA_GROUPS_DKTK: &str = include_str!("../resources/test/criteria_groups_dktk.json");
 
     #[test]
     fn test_extract_criteria_bbmri() {
-
         let measure_report: MeasureReport =
             serde_json::from_str(&EXAMPLE_MEASURE_REPORT_BBMRI).expect("Can't be deserialized");
 

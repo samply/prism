@@ -42,9 +42,13 @@ struct CliArgs {
     #[clap(long, env, value_parser)]
     api_key: String,
 
+    /// Sites to initially query, separated by ';'
+    #[clap(long, env, value_parser)]
+    sites: String,
+
     /// Number of retries for reaching the beam proxy and FHIR server, respectively
     #[clap(long, env, value_parser, default_value = "32")]
-    retry_count: usize,
+    wait_count: usize,
 
     /// Credentials to use on the Beam Proxy
     #[clap(long, env, value_parser = parse_cors)]
@@ -69,12 +73,14 @@ pub(crate) struct Config {
     pub beam_proxy_url: Url,
     pub beam_app_id_long: AppId,
     pub api_key: String,
-    pub retry_count: usize,
+    pub sites: Vec<String>,
+    pub wait_count: usize,
     pub cors_origin: AllowOrigin,
     pub project: String,
     pub bind_addr: SocketAddr,
     pub auth_header: Option<String>,
     pub query: String
+
 }
 
 impl Config {
@@ -85,7 +91,8 @@ impl Config {
             beam_proxy_url: cli_args.beam_proxy_url,
             beam_app_id_long: AppId::new_unchecked(cli_args.beam_app_id_long),
             api_key: cli_args.api_key,
-            retry_count: cli_args.retry_count,
+            sites: cli_args.sites.split(';').map(|s| s.to_string()).collect(),
+            wait_count: cli_args.wait_count,
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,

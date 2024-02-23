@@ -1,34 +1,42 @@
 mod beam;
 mod config;
+mod criteria;
 mod errors;
 mod logger;
-mod criteria;
 mod mr;
 
-use crate::{config::CONFIG, mr::MeasureReport};
 use crate::errors::PrismError;
+use crate::{config::CONFIG, mr::MeasureReport};
+use std::collections::HashSet;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
-use std::process::{exit, ExitCode};
+use std::time::SystemTime;
 
 use axum::{
-    extract::{Json, Path, Query},
-    http::HeaderValue,
+    extract::State, 
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, 
     Router,
 };
+
+use base64::engine::general_purpose;
+use base64::Engine as _;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use tracing_subscriber::util::SubscriberInitExt;
+
 use beam::create_beam_task;
 use beam_lib::{BeamClient, MsgId};
-use criteria::CriteriaGroup;
-use once_cell::sync::Lazy;
-use reqwest::{header, Method, StatusCode};
-use serde::{Deserialize, Serialize};
+use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
+use reqwest::Method;
+use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn, Level};
-use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
-use std::{collections::HashMap, time::Duration};
+use tracing_subscriber::EnvFilter;
 
-use beam_lib::{TaskRequest, TaskResult};
+use beam_lib::{RawString, TaskResult};
 
 static BEAM_CLIENT: Lazy<BeamClient> = Lazy::new(|| {
     BeamClient::new(
@@ -38,7 +46,7 @@ static BEAM_CLIENT: Lazy<BeamClient> = Lazy::new(|| {
     )
 });
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)] 
 struct LensQuery {
     id: MsgId,
     sites: Vec<String>,
@@ -50,12 +58,38 @@ type Created = std::time::SystemTime; //epoch
 
 #[derive(Debug, Clone)]
 struct CriteriaCache {
-    cache: HashMap<Site, (Vec<CriteriaGroup>, Created)>,
+    cache: HashMap<Site, (CriteriaGroups, Created)>,
 }
-const REPORTCACHE_TTL: Duration = Duration::from_secs(86400); //24h
+const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //24h
+
+#[derive(Clone)]
+struct SharedState {
+    criteria_cache: Arc<Mutex<CriteriaCache>>,
+    sites_to_query: Arc<Mutex<HashSet<String>>>,
+    tasks: Arc<Mutex<HashMap<MsgId, usize>>>,
+}
 
 #[tokio::main]
-async fn main() {
+pub async fn main() {
+    //🏳️‍🌈⃤
+    //it is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important
+    //at start prism sends a task to BHs in command line parameter and populates the cache
+    //when lens sends a query, prism adds up results for BHs in the request which it has in cache and sends them to lens
+    //prism sends queries to BHs from the request it doesn't have in cache (or are expired) and updates the cache
+
+    let criteria_cache: CriteriaCache = CriteriaCache {
+        cache: HashMap::new(),
+    };
+
+    let sites_to_query: HashSet<String> = HashSet::new();
+
+    let tasks: HashMap<MsgId, usize> = HashMap::new();
+
+    let shared_state = SharedState {
+        criteria_cache: Arc::new(Mutex::new(criteria_cache)),
+        sites_to_query: Arc::new(Mutex::new(sites_to_query)),
+        tasks: Arc::new(Mutex::new(tasks)),
+    };
 
     if let Err(e) = logger::init_logger() {
         error!("Cannot initalize logger: {}", e);
@@ -67,7 +101,17 @@ async fn main() {
         .finish()
         .init();
     info!("{:#?}", &CONFIG);
-    // TODO: Add check for reachability of beam-proxy
+    // TODO: check if beam up, if not exit
+
+    let result = query_sites(shared_state, Some(CONFIG.sites)).await;
+
+    match result {
+        Ok(()) => {}
+        Err(e) => {
+            error!("Beam doesn't work, it doesn't make sense that I run: {}", e);
+            exit(2);
+        }
+    }
 
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST])
@@ -75,9 +119,8 @@ async fn main() {
         .allow_headers([header::CONTENT_TYPE]);
 
     let app = Router::new()
-        .route("/beam", post(handle_create_beam_task))
-        .route("/beam/:task_id", get(handle_listen_to_beam_tasks))
-        //.layer(axum::middleware::map_response(set_server_header))
+        .route("/criteria", post(handle_get_criteria))
+        .with_state(shared_state)
         .layer(cors);
 
     axum::Server::bind(&CONFIG.bind_addr)
@@ -86,34 +129,165 @@ async fn main() {
         .unwrap();
 }
 
-async fn handle_create_beam_task(
+#[axum_macros::debug_handler]
+async fn handle_get_criteria(
+    State(shared_state): State<SharedState>,
     Json(query): Json<LensQuery>,
-) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
-    let LensQuery { id: _, sites, query: _ } = query;
+) -> Result<Response, (StatusCode, String)> {
+    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new();
+
+    match shared_state.criteria_cache.lock() {
+        Err(e) => {
+            error!("Mutex was poisoned: {:?}", e);
+        }
+        Ok(criteria_cache) => {
+            for site in query.clone().sites {
+                if criteria_cache.cache.contains_key(&site) {
+                    let maybe_criteria_group_time_from_cache = criteria_cache.cache.get(&site);
+                    match maybe_criteria_group_time_from_cache {
+                        //would just unwrap it, but unwrap can be a minefield after refactoring
+                        None => match shared_state.sites_to_query.lock() {
+                            Err(e) => {
+                                error!("Mutex was poisoned: {:?}", e);
+                            }
+                            Ok(mut sites_to_query) => {
+                                sites_to_query.insert(site);
+                            }
+                        },
+                        Some(criteria_groups_time_from_cache) => {
+                            if SystemTime::now()
+                                .duration_since(criteria_groups_time_from_cache.1)
+                                .unwrap()
+                                < CRITERIACACHE_TTL
+                            {
+                                criteria_groups = combine_groups_of_criteria_groups(
+                                    criteria_groups,
+                                    criteria_groups_time_from_cache.clone().0,
+                                );
+                            } else {
+                                match shared_state.sites_to_query.lock() {
+                                    Err(e) => {
+                                        error!("Mutex was poisoned: {:?}", e);
+                                    }
+                                    Ok(mut sites_to_query) => {
+                                        sites_to_query.insert(site);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let criteria_groups_json =
+        serde_json::to_string(&criteria_groups).expect("Failed to serialize JSON");
+
+    let response_builder = Response::builder().status(StatusCode::OK);
+
+    Ok(response_builder
+        .body(axum::body::Body::from(criteria_groups_json))
+        .unwrap()
+        .into_response())
+}
+
+async fn post_query(
+    mut tasks: std::sync::MutexGuard<'_, HashMap<MsgId, usize>>,
+    sites: Vec<String>,
+) -> Result<(), PrismError> {
     let task = create_beam_task(sites);
-    BEAM_CLIENT.post_task(&task).await.map_err(|e| {
-        warn!("Unable to query Beam.Proxy: {}", e);
-        (StatusCode::BAD_GATEWAY, "Unable to query Beam.Proxy")
-    })?;
-    Ok(StatusCode::CREATED)
+    BEAM_CLIENT
+        .post_task(&task)
+        .await
+        .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
+
+    tasks.insert(task.id, 0);
+
+    Ok(())
 }
 
-#[derive(Deserialize)]
-struct ListenQueryParameters {
-    wait_count: u16,
+async fn query_sites(
+    shared_state: SharedState,
+    sites: Option<Vec<String>>,
+) -> Result<(), PrismError> {
+    if let Some(sites) = sites {
+        match shared_state.tasks.lock() {
+            Err(e) => {
+                error!("Mutex was poisoned: {:?}", e);
+                return Err(PrismError::PoisonedMutex(e.to_string()));
+            }
+            Ok(tasks) => {
+                post_query(tasks, sites.clone().into_iter().collect()).await?;
+            }
+        }
+    }
+
+    match shared_state.sites_to_query.lock() {
+        Err(e) => {
+            error!("Mutex was poisoned: {:?}", e);
+            return Err(PrismError::PoisonedMutex(e.to_string()));
+        }
+        Ok(mut sites_to_query) => {
+            match shared_state.tasks.lock() {
+                Err(e) => {
+                    error!("Mutex was poisoned: {:?}", e);
+                    return Err(PrismError::PoisonedMutex(e.to_string()));
+                }
+                Ok(tasks) => {
+                    post_query(tasks, sites_to_query.clone().into_iter().collect()).await?;
+                    sites_to_query.clear(); //only if no error
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
-async fn handle_listen_to_beam_tasks(
-    Path(task_id): Path<MsgId>,
-    Query(listen_query_parameter): Query<ListenQueryParameters>
-)  {
+async fn get_results(shared_state: SharedState) -> Result<(), PrismError> {
+    match shared_state.tasks.lock() {
+        Err(e) => {
+            error!("Mutex was poisoned: {:?}", e);
+            return Err(PrismError::PoisonedMutex(e.to_string()));
+        }
+        Ok(mut tasks) => {
+            match shared_state.criteria_cache.lock() {
+                Err(e) => {
+                    error!("Mutex was poisoned: {:?}", e);
+                    return Err(PrismError::PoisonedMutex(e.to_string()));
+                }
+                Ok(mut criteria_cache) => {
+                    for task in tasks.clone().into_iter() {
+                        let processed = process_task(task.0, &mut criteria_cache).await;
+                        match processed {
+                            Ok(()) => {
+                                tasks.remove(&task.0);
+                            }
+                            Err(e) => {
+                                error!("There has been an error getting results for task {}. Error: {}", task.0, e);
+
+                                if task.1 > 3 {
+                                    tasks.remove(&task.0); // 3 attempts enough, could even be 1
+                                } else {
+                                    tasks.entry(task.0).and_modify(|e| *e += 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_task(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result<(), PrismError> {
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
-            &format!(
-                "v1/tasks/{}/results?wait_count={}",
-                task_id, listen_query_parameter.wait_count
-            ),
+            &format!("v1/tasks/{}/results?wait_count={}", task, CONFIG.wait_count),
         )
         .header(
             header::ACCEPT,
@@ -121,94 +295,41 @@ async fn handle_listen_to_beam_tasks(
         )
         .send()
         .await
-        .map_err(|err| {
-            println!(
-                "Failed request to {} with error: {}",
-                CONFIG.beam_proxy_url, err
-            );
-            (
-                StatusCode::BAD_GATEWAY,
-                "Error calling beam, check the server logs.".to_string(),
-            )
-        });
-    
-    if let Err(e) = resp {
-        warn!("Resp is messed up");
-        return;
-    }
-
-    let resp = resp.unwrap();
-
+        .map_err(|e| PrismError::BeamError(e.to_string()))?;
     let code = resp.status();
     if !code.is_success() {
-        //return Err((code, ));
-
-        //just log the error, no return necessary
-        warn!("Error: {}", resp.text().await.unwrap_or_else(|e| e.to_string()));
-        return;
-        
-    }
-    //here convert from MR to criteria and add to cache
-
-    let body = resp.text().await;
-
-    if let Err(e) = body {
-        warn!("Error: {}", e.to_string());
-        return;
+        return Err(PrismError::BeamError(
+            resp.text().await.unwrap_or_else(|e| e.to_string()),
+        ));
     }
 
-    let measure_report: Result<mr::MeasureReport, PrismError> = serde_json::from_str(body.unwrap().as_str()).map_err(|e| PrismError::DeserializationError(e.to_string()));
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| PrismError::BeamError(e.to_string()))?;
 
-    let measure_report = measure_report.unwrap();
+    let task_result_result: Result<TaskResult<RawString>, PrismError> =
+        serde_json::from_str(&text).map_err(|e| PrismError::DeserializationError(e.to_string()));
 
-    let criteria = mr::extract_criteria(measure_report);
+    let task_result = task_result_result?;
 
-    //if let Err(criteria) = body {
-        //warn!("Error extracting criteria from MeasureReport {}", e.to_string());
-        //return;
-    //}
+    let decoded: Result<Vec<u8>, PrismError> = general_purpose::STANDARD
+        .decode(task_result.body.into_string())
+        .map_err(|e| PrismError::DecodeError(e));
 
-    let criteria = criteria.unwrap();
+    let vector = decoded?;
 
-    //criteria_cache; 
+    let measure_report_result: Result<MeasureReport, PrismError> = serde_json::from_slice(&vector)
+        .map_err(|e| PrismError::DeserializationError(e.to_string()));
 
+    let measure_report = measure_report_result?;
 
+    let criteria = mr::extract_criteria(measure_report)?;
 
+    criteria_cache.cache.insert(
+        task_result.from.app_name().into(),
+        (criteria, std::time::SystemTime::now()),
+    );
 
-
-    //Ok(convert_response(resp))
+    Ok(())
 }
-
-// Modified version of https://github.com/tokio-rs/axum/blob/c8cf147657093bff3aad5cbf2dafa336235a37c6/examples/reqwest-response/src/main.rs#L61
-fn convert_response(response: reqwest::Response) -> axum::response::Response {
-    let mut response_builder = Response::builder().status(response.status());
-
-    // This unwrap is fine because we haven't insert any headers yet so there can't be any invalid
-    // headers
-    *response_builder.headers_mut().unwrap() = response.headers().clone();
-
-    response_builder
-        .body(axum::body::Body::wrap_stream(response.bytes_stream()))
-        // Same goes for this unwrap
-        .unwrap()
-        .into_response()
-}
-
-//it is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important
-//at start prism sends a task to BHs in command line parameter and populates the cache
-//when lens sends a query, prism adds up results for BHs in the request which it has in cache and sends them to lens
-//prism sends queries to BHs from the request it doesn't have in cache (or are expired) and updates the cache
-
-
-//🏳️‍🌈⃤
-
-pub(crate) async fn set_server_header<B>(mut response: Response<B>) -> Response<B> {
-    if !response.headers_mut().contains_key(header::SERVER) {
-        response.headers_mut().insert(
-            header::SERVER,
-            HeaderValue::from_static("Samply :)"),
-        );
-    }
-    response
-}
-

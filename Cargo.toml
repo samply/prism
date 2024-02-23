@@ -8,11 +8,12 @@ license = "Apache-2.0"
 
 [dependencies]
 axum = "0.6.12"
+axum-macros = "*"
 base64 = { version = "0.21.0", default_features = false }
 http = "0.2"
 reqwest = { version = "0.11.20", default_features = false, features = ["json", "default-tls", "stream"] }
 serde = { version = "1.0.152", features = ["serde_derive"] }
-serde_json = "1.0"
+serde_json = "1.0.96"
 thiserror = "1.0.38"
 rand = { default-features = false, version = "0.8.5" }
 chrono = "0.4.31"
