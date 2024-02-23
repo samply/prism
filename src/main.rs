@@ -14,9 +14,9 @@ use std::time::SystemTime;
 
 use axum::{
     extract::State, 
-    http::{header, HeaderValue, StatusCode},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::post,
     Json, 
     Router,
 };
@@ -24,13 +24,13 @@ use axum::{
 use base64::engine::general_purpose;
 use base64::Engine as _;
 use once_cell::sync::Lazy;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::util::SubscriberInitExt;
 
 use beam::create_beam_task;
 use beam_lib::{BeamClient, MsgId};
 use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
-use reqwest::Method;
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn, Level};
@@ -114,7 +114,7 @@ pub async fn main() {
     }
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([http::Method::GET, http::Method::POST])
         .allow_origin(CONFIG.cors_origin.clone())
         .allow_headers([header::CONTENT_TYPE]);
 
@@ -123,13 +123,14 @@ pub async fn main() {
         .with_state(shared_state)
         .layer(cors);
 
-    axum::Server::bind(&CONFIG.bind_addr)
-        .serve(app.into_make_service())
+    let tcp_listener = tokio::net::TcpListener::bind(CONFIG.bind_addr).await
+        .expect("Unable to bind to listen port");
+
+    axum::serve(tcp_listener, app.into_make_service())
         .await
         .unwrap();
 }
 
-#[axum_macros::debug_handler]
 async fn handle_get_criteria(
     State(shared_state): State<SharedState>,
     Json(query): Json<LensQuery>,
@@ -290,8 +291,8 @@ async fn process_task(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result
             &format!("v1/tasks/{}/results?wait_count={}", task, CONFIG.wait_count),
         )
         .header(
-            header::ACCEPT,
-            HeaderValue::from_static("text/event-stream"),
+            http_old::header::ACCEPT,
+            http_old::HeaderValue::from_static("text/event-stream"),
         )
         .send()
         .await
@@ -315,7 +316,7 @@ async fn process_task(task: MsgId, criteria_cache: &mut CriteriaCache) -> Result
 
     let decoded: Result<Vec<u8>, PrismError> = general_purpose::STANDARD
         .decode(task_result.body.into_string())
-        .map_err(|e| PrismError::DecodeError(e));
+        .map_err(PrismError::DecodeError);
 
     let vector = decoded?;
 
