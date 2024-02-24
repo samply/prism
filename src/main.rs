@@ -213,6 +213,9 @@ match sites{
         None => { // Prism queries sites from the shared state
             let mut locked_sites = shared_state.sites_to_query.lock().await;
             let sites: Vec<String> = locked_sites.clone().into_iter().collect();
+            if sites.is_empty() {
+                return (Ok(()));
+            }
             post_query(shared_state.tasks.lock().await, &sites).await?;
             locked_sites.clear(); // if posting the task was successful, the set of sites to query is emptied
         }
