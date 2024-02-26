@@ -77,7 +77,8 @@ pub async fn main() {
     /*
     🏳️‍🌈⃤
     Prism returns cumulative positive numbers of each of individual criteria defined in CQL queries and Measures at sites it is queried about.
-    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. It doesn't return criteria for which there are no results. It can't return results for range types.
+    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. 
+    It doesn't return criteria for which there are no results. It can't return results for range types.
 
     It is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important.
     At start prism sends a task to BHs in command line parameter and populates the cache.
@@ -85,14 +86,15 @@ pub async fn main() {
     Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set.
     In a parallel process a task for all sites in the set is periodically sent to beam and a new process asking for the results is spawned.
     Successfully retrieved results are cached.
-       */
+    */
 
     let criteria_cache: CriteriaCache = CriteriaCache {
         //stores criteria for CRITERIACACHE_TTL to avoid querying the sites and processing results too often
         cache: HashMap::new(),
     };
 
-    let sites_to_query: HashSet<String> = HashSet::new(); //accumulates sites to query, those for which Lens asked for criteria, and they either weren't cached or the cache had expired, emptied when task to sites sent
+    let sites_to_query: HashSet<String> = HashSet::new(); 
+    //accumulates sites to query, those for which Lens asked for criteria, and they either weren't cached or the cache had expired, emptied when task to sites sent
 
     let shared_state = SharedState {
         criteria_cache: Arc::new(Mutex::new(criteria_cache)),
@@ -109,12 +111,12 @@ pub async fn main() {
         .finish()
         .init();
     info!("{:#?}", &CONFIG);
-    // TODO: check if beam up, if not exit
 
     if let Err(e) = wait_for_beam_proxy().await {
         error!("Beam doesn't work, it doesn't make sense that I run: {}", e);
         exit(2);
     }
+    
     spawn_site_querying(shared_state.clone());
 
     let cors = CorsLayer::new()
