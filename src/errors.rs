@@ -16,8 +16,6 @@ pub enum PrismError {
     SerializationError(String),
     #[error("Invalid Header Value: {0}")]
     InvalidHeaderValue(http::header::InvalidHeaderValue),
-    #[error("Poisoned mutex: {0}")]
-    PoisonedMutex(String),
     #[error("Decode error: {0}")]
     DecodeError(base64::DecodeError),
 }

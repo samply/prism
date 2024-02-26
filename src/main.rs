@@ -25,7 +25,6 @@ use axum::{
     Json, Router,
 };
 
-use base64::engine::general_purpose;
 use base64::Engine as _;
 use once_cell::sync::Lazy;
 use reqwest::Method;
@@ -66,10 +65,6 @@ struct CriteriaCache {
 }
 const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //cached criteria expire after 24h
 
-type Attempts = usize;
-
-const MAX_ATTEMPTS: usize = 3; // maximum number of attempts to get results for each task
-
 #[derive(Clone)]
 struct SharedState {
     criteria_cache: Arc<Mutex<CriteriaCache>>,
@@ -86,15 +81,11 @@ pub async fn main() {
     It is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important.
     At start prism sends a task to BHs in command line parameter and populates the cache.
     When lens sends a query, prism adds up results for BHs in the request which are present in cache (and not expired) and sends them to lens.
-    Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set. In a parallel process a task for all sites in the set is periodically sent to beam. 
-    After a task is sent successfully its task id is added to the list of tasks for which Prism needs to get the results. That list also stores how many times Prism has attempted to get the results for each task.
-    In another parallel process beam is asked for results for all the tasks in the list of tasks. 
-    Successfully retrieved results are cached. In case of an error, the number of attempts in the list for the task id is increased, provided that it's not higher than the maximum number of attempts, otherwise task id is removed from the list.
-    */
+    Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set. 
+    In a parallel process a task for all sites in the set is periodically sent to beam and a new process asking for the results is spawned.
+    Successfully retrieved results are cached. 
+       */
 
-    // TODO: start a thread/process/worker for posting tasks to beam
-    // TODO: start a thread/process/worker for getting results from beam and processing them
-    // TODO: handle errors in main
 
     let criteria_cache: CriteriaCache = CriteriaCache { //stores criteria for CRITERIACACHE_TTL to avoid querying the sites and processing results too often
         cache: HashMap::new(),
@@ -223,7 +214,7 @@ async fn query_sites(
 
 match sites{
         Some(sites) => { // argument site is present, Prism uses it and ignores sites from the shared state
-            post_query(shared_state, sites.iter().cloned().collect()).await?;
+            post_query(shared_state, sites.to_vec()).await?;
         },
         None => { // Prism queries sites from the shared state
             let mut locked_sites = shared_state.sites_to_query.lock().await;
@@ -262,14 +253,14 @@ async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), Pr
     }
     let mut stream = async_sse::decode(resp.bytes_stream().map_err(|e| io::Error::new(io::ErrorKind::Other, e)).into_async_read());
     while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
-        let (from, measure) = match decode_result(&msg) {
+        let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
             Err(e) => {
                 warn!("Failed to deserialize message {msg:?} into a result: {e}");
                 continue;
             },
         };
-        let criteria = match mr::extract_criteria(measure) {
+        let criteria = match mr::extract_criteria(measure_report) {
             Ok(c) => c,
             Err(e) => {
                 warn!("Failed to extract criteria from {from}: {e}");
