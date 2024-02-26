@@ -8,10 +8,14 @@ mod mr;
 use crate::errors::PrismError;
 use crate::{config::CONFIG, mr::MeasureReport};
 use std::collections::HashSet;
+use std::io;
 use std::process::exit;
 use std::sync::Arc;
 use std::time::SystemTime;
+use http::HeaderValue;
 use tokio::sync::Mutex;
+use futures_util::{StreamExt as _, TryStreamExt};
+use base64::engine::general_purpose::STANDARD as BASE64;
 
 use axum::{
     extract::State,
@@ -29,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use tracing_subscriber::util::SubscriberInitExt;
 
 use beam::create_beam_task;
-use beam_lib::{BeamClient, MsgId};
+use beam_lib::{AppId, BeamClient, MsgId};
 use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
@@ -70,7 +74,6 @@ const MAX_ATTEMPTS: usize = 3; // maximum number of attempts to get results for 
 struct SharedState {
     criteria_cache: Arc<Mutex<CriteriaCache>>,
     sites_to_query: Arc<Mutex<HashSet<String>>>,
-    tasks: Arc<Mutex<HashMap<MsgId, usize>>>,
 }
 
 #[tokio::main]
@@ -99,16 +102,13 @@ pub async fn main() {
 
     let sites_to_query: HashSet<String> = HashSet::new(); //accumulates sites to query, those for which Lens asked for criteria, and they either weren't cached or the cache had expired, emptied when task to sites sent
 
-    let tasks: HashMap<MsgId, Attempts> = HashMap::new(); //accumulates IDs of tasks sent and the numbers of attempts of getting the results of them, emptied when results gotten or the maximum number of attempts exceeded 
-
     let shared_state = SharedState {
         criteria_cache: Arc::new(Mutex::new(criteria_cache)),
         sites_to_query: Arc::new(Mutex::new(sites_to_query)),
-        tasks: Arc::new(Mutex::new(tasks)),
     };
 
     if let Err(e) = logger::init_logger() {
-        error!("Cannot initalize logger: {}", e);
+        error!("Cannot initialize logger: {}", e);
         exit(1);
     };
     tracing_subscriber::FmtSubscriber::builder()
@@ -119,15 +119,11 @@ pub async fn main() {
     info!("{:#?}", &CONFIG);
     // TODO: check if beam up, if not exit
 
-    let result = query_sites(&shared_state, Some(&CONFIG.sites)).await; // querying sites from configuration to populate the cache at start
-
-    match result {
-        Ok(()) => {}
-        Err(e) => {
-            error!("Beam doesn't work, it doesn't make sense that I run: {}", e);
-            exit(2);
-        }
+    if let Err(e) = wait_for_beam_proxy().await {
+        error!("Beam doesn't work, it doesn't make sense that I run: {}", e);
+        exit(2);
     }
+    spawn_site_querying(shared_state.clone());
 
     let cors = CorsLayer::new()
         .allow_methods([http::Method::GET, http::Method::POST])
@@ -139,13 +135,24 @@ pub async fn main() {
         .with_state(shared_state)
         .layer(cors);
 
-    let tcp_listener = tokio::net::TcpListener::bind(CONFIG.bind_addr)
+    axum::Server::bind(&CONFIG.bind_addr)
+        .serve(app.into_make_service())
         .await
-        .expect("Unable to bind to listen port");
+        .unwrap()
+}
 
-    axum::serve(tcp_listener, app.into_make_service())
-        .await
-        .unwrap();
+fn spawn_site_querying(shared_state: SharedState) {
+    tokio::spawn(async move {
+        if let Err(e) = query_sites(shared_state.clone(), Some(&CONFIG.sites)).await {
+            warn!("Failed to query sites: {e}. Will try again later");
+        }
+        loop {
+            if let Err(e) = query_sites(shared_state.clone(), None).await {
+                warn!("Failed to query sites: {e}. Will try again later");
+            }
+            tokio::time::sleep(Duration::from_secs(15 * 60)).await;
+        }
+    });
 }
 
 async fn handle_get_criteria(
@@ -187,36 +194,44 @@ async fn handle_get_criteria(
 }
 
 async fn post_query(
-    mut tasks: tokio::sync::MutexGuard<'_, HashMap<MsgId, usize>>,
-    sites: &[impl ToString],
+    shared_state: SharedState,
+    sites: Vec<String>,
 ) -> Result<(), PrismError> {
+    if sites.is_empty() {
+        info!("No sites to query");
+        return Ok(());
+    }
     let task = create_beam_task(sites);
     BEAM_CLIENT
         .post_task(&task)
         .await
         .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
 
-    tasks.insert(task.id, 0); // if beam task is successfully created, its id is added to the list of tasks to get the results of
+    tokio::spawn(async move { 
+        if let Err(e) = get_results(shared_state, task.id).await {
+            warn!("Failed to get results for {}: {e}", task.id);
+        }
+    });
 
     Ok(())
 }
 
 async fn query_sites(
-    shared_state: &SharedState,
-    sites: Option<&[impl ToString]>,
+    shared_state: SharedState,
+    sites: Option<&[String]>,
 ) -> Result<(), PrismError> {
 
 match sites{
         Some(sites) => { // argument site is present, Prism uses it and ignores sites from the shared state
-            post_query(shared_state.tasks.lock().await, sites).await?;
+            post_query(shared_state, sites.iter().cloned().collect()).await?;
         },
         None => { // Prism queries sites from the shared state
             let mut locked_sites = shared_state.sites_to_query.lock().await;
             let sites: Vec<String> = locked_sites.clone().into_iter().collect();
             if sites.is_empty() {
-                return (Ok(()));
+                return Ok(());
             }
-            post_query(shared_state.tasks.lock().await, &sites).await?;
+            post_query(shared_state.clone(), sites).await?;
             locked_sites.clear(); // if posting the task was successful, the set of sites to query is emptied
         }
     };
@@ -224,80 +239,72 @@ match sites{
     Ok(())
 }
 
-async fn get_results(shared_state: SharedState) -> Result<(), PrismError> {
-
-    let mut locked_tasks = shared_state.tasks.lock().await;
-    for task in locked_tasks.clone() {
-        let processed = process_results(task.0, &mut shared_state.criteria_cache.lock().await).await;
-        match processed {
-            Ok(()) => {
-                locked_tasks.remove(&task.0); // results received and cached, task id removed from the list
-            }
-            Err(e) => {
-                error!("There has been an error getting results for task {}. Error: {}", task.0, e);
-
-                if task.1 > MAX_ATTEMPTS - 1 {
-                    locked_tasks.remove(&task.0); // results not received, but max number of attempts reached, task id removed from the list
-                } else {
-                    locked_tasks.entry(task.0).and_modify(|e| *e += 1); // results not received, max number of attempts not reached, the number of attempts in the list is increased
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn process_results(
-    task: MsgId,
-    criteria_cache: &mut tokio::sync::MutexGuard<'_, CriteriaCache>,
-) -> Result<(), PrismError> {
+async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), PrismError> {
+    let criteria_cache: &mut tokio::sync::MutexGuard<'_, CriteriaCache> = &mut shared_state.criteria_cache.lock().await;
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
-            &format!("v1/tasks/{}/results?wait_count={}", task, CONFIG.wait_count),
+            &format!("v1/tasks/{}/results?wait_count={}", task_id, CONFIG.wait_count),
         )
         .header(
-            http_old::header::ACCEPT,
-            http_old::HeaderValue::from_static("text/event-stream"),
+            header::ACCEPT,
+            HeaderValue::from_static("text/event-stream"),
         )
         .send()
         .await
         .map_err(|e| PrismError::BeamError(e.to_string()))?;
+
     let code = resp.status();
     if !code.is_success() {
         return Err(PrismError::BeamError(
             resp.text().await.unwrap_or_else(|e| e.to_string()),
         ));
     }
-
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| PrismError::BeamError(e.to_string()))?;
-
-    let task_result_result: Result<TaskResult<RawString>, PrismError> =
-        serde_json::from_str(&text).map_err(|e| PrismError::DeserializationError(e.to_string()));
-
-    let task_result = task_result_result?;
-
-    let decoded: Result<Vec<u8>, PrismError> = general_purpose::STANDARD
-        .decode(task_result.body.into_string())
-        .map_err(PrismError::DecodeError);
-
-    let vector = decoded?;
-
-    let measure_report_result: Result<MeasureReport, PrismError> = serde_json::from_slice(&vector)
-        .map_err(|e| PrismError::DeserializationError(e.to_string()));
-
-    let measure_report = measure_report_result?;
-
-    let criteria = mr::extract_criteria(measure_report)?; // extracting criteria from measure report
-
-    criteria_cache.cache.insert( //if successful caching the criteria
-        task_result.from.app_name().into(), // extracting site name from app long name
-        (criteria, std::time::SystemTime::now()),
-    );
-
+    let mut stream = async_sse::decode(resp.bytes_stream().map_err(|e| io::Error::new(io::ErrorKind::Other, e)).into_async_read());
+    while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
+        let (from, measure) = match decode_result(&msg) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to deserialize message {msg:?} into a result: {e}");
+                continue;
+            },
+        };
+        let criteria = match mr::extract_criteria(measure) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Failed to extract criteria from {from}: {e}");
+                continue;
+            },
+        };
+        criteria_cache.cache.insert( //if successful caching the criteria
+            from.app_name().into(), // extracting site name from app long name
+            (criteria, std::time::SystemTime::now()),
+        );
+    }
     Ok(())
+}
+
+fn decode_result(msg: &async_sse::Message) -> anyhow::Result<(AppId, MeasureReport)> {
+    let result: TaskResult<RawString> = serde_json::from_slice(msg.data())?;
+    let decoded = BASE64.decode(result.body.0)?;
+    Ok((result.from, serde_json::from_slice(&decoded)?))
+}
+
+
+async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
+    const MAX_RETRIES: u8 = 32;
+    let mut tries = 1;
+    loop {
+        match reqwest::get(format!("{}/v1/health", CONFIG.beam_proxy_url)).await {
+            Ok(res) if res.status() == StatusCode::OK => return Ok(()),
+            _ if tries <= MAX_RETRIES => tries += 1,
+            Err(e) => return Err(e.into()),
+            Ok(res) => {
+                return Err(beam_lib::BeamError::Other(
+                    format!("Proxy reachable but failed to start {}", res.status()).into(),
+                ))
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
