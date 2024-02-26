@@ -7,15 +7,15 @@ mod mr;
 
 use crate::errors::PrismError;
 use crate::{config::CONFIG, mr::MeasureReport};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use futures_util::{StreamExt as _, TryStreamExt};
+use http::HeaderValue;
 use std::collections::HashSet;
 use std::io;
 use std::process::exit;
 use std::sync::Arc;
 use std::time::SystemTime;
-use http::HeaderValue;
 use tokio::sync::Mutex;
-use futures_util::{StreamExt as _, TryStreamExt};
-use base64::engine::general_purpose::STANDARD as BASE64;
 
 use axum::{
     extract::State,
@@ -50,10 +50,11 @@ static BEAM_CLIENT: Lazy<BeamClient> = Lazy::new(|| {
 });
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct LensQuery { // kept it the same as in spot, but only sites needed
-    id: MsgId, // prism ignores this and creates its own
+struct LensQuery {
+    // kept it the same as in spot, but only sites needed
+    id: MsgId,          // prism ignores this and creates its own
     sites: Vec<String>, //TODO: coordinate with Lens team to introduce a new type of lens query with sites only
-    query: String, // prism ignores this and uses the default query for the project
+    query: String,      // prism ignores this and uses the default query for the project
 }
 
 type Site = String;
@@ -76,18 +77,18 @@ pub async fn main() {
     /*
     🏳️‍🌈⃤
     Prism returns cumulative positive numbers of each of individual criteria defined in CQL queries and Measures at sites it is queried about.
-    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. It doesn't return criteria for which there are no results. It can't return results for range types. 
-    
+    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. It doesn't return criteria for which there are no results. It can't return results for range types.
+
     It is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important.
     At start prism sends a task to BHs in command line parameter and populates the cache.
     When lens sends a query, prism adds up results for BHs in the request which are present in cache (and not expired) and sends them to lens.
-    Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set. 
+    Prism accumulates names of sites for which it doesn't have non-expired results in the cache in a set.
     In a parallel process a task for all sites in the set is periodically sent to beam and a new process asking for the results is spawned.
-    Successfully retrieved results are cached. 
+    Successfully retrieved results are cached.
        */
 
-
-    let criteria_cache: CriteriaCache = CriteriaCache { //stores criteria for CRITERIACACHE_TTL to avoid querying the sites and processing results too often
+    let criteria_cache: CriteriaCache = CriteriaCache {
+        //stores criteria for CRITERIACACHE_TTL to avoid querying the sites and processing results too often
         cache: HashMap::new(),
     };
 
@@ -166,11 +167,15 @@ async fn handle_get_criteria(
                 None => None,
             };
 
-            if let Some(cached_criteria_groups) = criteria_groups_from_cache { //cached and not expired
-                criteria_groups = combine_groups_of_criteria_groups(criteria_groups, cached_criteria_groups); // adding all the criteria to the ones already in criteria_groups
-            } else {    //not cached or expired
-                shared_state.sites_to_query.lock().await.insert(site); // inserting the site into the set of sites to query
-            }
+        if let Some(cached_criteria_groups) = criteria_groups_from_cache {
+            //cached and not expired
+            criteria_groups =
+                combine_groups_of_criteria_groups(criteria_groups, cached_criteria_groups);
+        // adding all the criteria to the ones already in criteria_groups
+        } else {
+            //not cached or expired
+            shared_state.sites_to_query.lock().await.insert(site); // inserting the site into the set of sites to query
+        }
     }
 
     let criteria_groups_json =
@@ -184,10 +189,7 @@ async fn handle_get_criteria(
         .into_response())
 }
 
-async fn post_query(
-    shared_state: SharedState,
-    sites: Vec<String>,
-) -> Result<(), PrismError> {
+async fn post_query(shared_state: SharedState, sites: Vec<String>) -> Result<(), PrismError> {
     if sites.is_empty() {
         info!("No sites to query");
         return Ok(());
@@ -198,7 +200,7 @@ async fn post_query(
         .await
         .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
 
-    tokio::spawn(async move { 
+    tokio::spawn(async move {
         if let Err(e) = get_results(shared_state, task.id).await {
             warn!("Failed to get results for {}: {e}", task.id);
         }
@@ -211,12 +213,13 @@ async fn query_sites(
     shared_state: SharedState,
     sites: Option<&[String]>,
 ) -> Result<(), PrismError> {
-
-match sites{
-        Some(sites) => { // argument site is present, Prism uses it and ignores sites from the shared state
+    match sites {
+        Some(sites) => {
+            // argument site is present, Prism uses it and ignores sites from the shared state
             post_query(shared_state, sites.to_vec()).await?;
-        },
-        None => { // Prism queries sites from the shared state
+        }
+        None => {
+            // Prism queries sites from the shared state
             let mut locked_sites = shared_state.sites_to_query.lock().await;
             let sites: Vec<String> = locked_sites.clone().into_iter().collect();
             if sites.is_empty() {
@@ -231,11 +234,15 @@ match sites{
 }
 
 async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), PrismError> {
-    let criteria_cache: &mut tokio::sync::MutexGuard<'_, CriteriaCache> = &mut shared_state.criteria_cache.lock().await;
+    let criteria_cache: &mut tokio::sync::MutexGuard<'_, CriteriaCache> =
+        &mut shared_state.criteria_cache.lock().await;
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
-            &format!("v1/tasks/{}/results?wait_count={}", task_id, CONFIG.wait_count),
+            &format!(
+                "v1/tasks/{}/results?wait_count={}",
+                task_id, CONFIG.wait_count
+            ),
         )
         .header(
             header::ACCEPT,
@@ -251,23 +258,28 @@ async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), Pr
             resp.text().await.unwrap_or_else(|e| e.to_string()),
         ));
     }
-    let mut stream = async_sse::decode(resp.bytes_stream().map_err(|e| io::Error::new(io::ErrorKind::Other, e)).into_async_read());
+    let mut stream = async_sse::decode(
+        resp.bytes_stream()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .into_async_read(),
+    );
     while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
         let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
             Err(e) => {
                 warn!("Failed to deserialize message {msg:?} into a result: {e}");
                 continue;
-            },
+            }
         };
         let criteria = match mr::extract_criteria(measure_report) {
             Ok(c) => c,
             Err(e) => {
                 warn!("Failed to extract criteria from {from}: {e}");
                 continue;
-            },
+            }
         };
-        criteria_cache.cache.insert( //if successful caching the criteria
+        criteria_cache.cache.insert(
+            //if successful caching the criteria
             from.app_name().into(), // extracting site name from app long name
             (criteria, std::time::SystemTime::now()),
         );
@@ -280,7 +292,6 @@ fn decode_result(msg: &async_sse::Message) -> anyhow::Result<(AppId, MeasureRepo
     let decoded = BASE64.decode(result.body.0)?;
     Ok((result.from, serde_json::from_slice(&decoded)?))
 }
-
 
 async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
     const MAX_RETRIES: u8 = 32;
