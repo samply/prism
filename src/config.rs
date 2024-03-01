@@ -66,6 +66,9 @@ struct CliArgs {
     #[clap(long, env, value_parser)]
     auth_header: Option<String>,
 
+    /// Target_application_name
+    #[clap(long, env, value_parser, default_value = "focus")]
+    target: String,
 }
 
 #[derive(Debug)]
@@ -79,8 +82,8 @@ pub(crate) struct Config {
     pub project: String,
     pub bind_addr: SocketAddr,
     pub auth_header: Option<String>,
-    pub query: String
-
+    pub query: String,
+    pub target: String,
 }
 
 impl Config {
@@ -98,16 +101,17 @@ impl Config {
             bind_addr: cli_args.bind_addr,
             auth_header: cli_args.auth_header,
             query: get_query(),
+            target: cli_args.target,
         };
         Ok(config)
     }
 }
 
 fn get_query() -> String {
-    let query_file_name = format!("../resources/query_{}.encoded", CliArgs::parse().project);
-    fs::read_to_string(&query_file_name).unwrap_or_else(|_| panic!("File {} can't be read", &query_file_name))
+    let query_file_name = format!("resources/query_{}.encoded", CliArgs::parse().project);
+    fs::read_to_string(&query_file_name)
+        .unwrap_or_else(|_| panic!("File {} can't be read", &query_file_name))
 }
-
 
 fn parse_cors(v: &str) -> Result<AllowOrigin, http::header::InvalidHeaderValue> {
     if v == "*" || v.to_lowercase() == "any" {

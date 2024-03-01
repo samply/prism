@@ -11,11 +11,13 @@ pub enum PrismError {
     #[error("Beam error: {0}")]
     BeamError(String),
     #[error("CQL tampered with: {0}")]
-    DeserializationError(String),
+    DeserializationError(serde_json::Error),
     #[error("Serialization error: {0}")]
     SerializationError(String),
     #[error("Invalid Header Value: {0}")]
     InvalidHeaderValue(http::header::InvalidHeaderValue),
     #[error("Decode error: {0}")]
     DecodeError(base64::DecodeError),
+    #[error("Unexpected WorkStatus: {0:?}")]
+    UnexpectedWorkStatusError(beam_lib::WorkStatus),
 }

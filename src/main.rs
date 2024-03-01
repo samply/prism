@@ -29,15 +29,13 @@ use base64::Engine as _;
 use once_cell::sync::Lazy;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::util::SubscriberInitExt;
 
 use beam::create_beam_task;
 use beam_lib::{AppId, BeamClient, MsgId};
 use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
-use tracing::{error, info, warn, Level};
-use tracing_subscriber::EnvFilter;
+use tracing::{error, info, warn};
 
 use beam_lib::{RawString, TaskResult};
 
@@ -51,10 +49,7 @@ static BEAM_CLIENT: Lazy<BeamClient> = Lazy::new(|| {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct LensQuery {
-    // kept it the same as in spot, but only sites needed
-    id: MsgId,          // prism ignores this and creates its own
-    sites: Vec<String>, //TODO: coordinate with Lens team to introduce a new type of lens query with sites only
-    query: String,      // prism ignores this and uses the default query for the project
+    sites: Vec<String>, 
 }
 
 type Site = String;
@@ -77,7 +72,7 @@ pub async fn main() {
     /*
     🏳️‍🌈⃤
     Prism returns cumulative positive numbers of each of individual criteria defined in CQL queries and Measures at sites it is queried about.
-    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR. 
+    Prism doesn't return all the search criteria in the search tree and is not a replacement for MDR.
     It doesn't return criteria for which there are no results. It can't return results for range types.
 
     It is not crucial that the counts are current or that they include all the BHs, speed of drawing lens is more important.
@@ -93,7 +88,7 @@ pub async fn main() {
         cache: HashMap::new(),
     };
 
-    let sites_to_query: HashSet<String> = HashSet::new(); 
+    let sites_to_query: HashSet<String> = HashSet::new();
     //accumulates sites to query, those for which Lens asked for criteria, and they either weren't cached or the cache had expired, emptied when task to sites sent
 
     let shared_state = SharedState {
@@ -105,18 +100,12 @@ pub async fn main() {
         error!("Cannot initialize logger: {}", e);
         exit(1);
     };
-    tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .with_env_filter(EnvFilter::from_default_env())
-        .finish()
-        .init();
-    info!("{:#?}", &CONFIG);
 
     if let Err(e) = wait_for_beam_proxy().await {
         error!("Beam doesn't work, it doesn't make sense that I run: {}", e);
         exit(2);
     }
-    
+
     spawn_site_querying(shared_state.clone());
 
     let cors = CorsLayer::new()
@@ -236,8 +225,6 @@ async fn query_sites(
 }
 
 async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), PrismError> {
-    let criteria_cache: &mut tokio::sync::MutexGuard<'_, CriteriaCache> =
-        &mut shared_state.criteria_cache.lock().await;
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
@@ -268,6 +255,16 @@ async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), Pr
     while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
         let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
+            Err(PrismError::UnexpectedWorkStatusError(beam_lib::WorkStatus::Claimed)) => {
+                info!("Task claimed:) {msg:?}");
+                continue;
+            }
+            Err(PrismError::UnexpectedWorkStatusError(
+                beam_lib::WorkStatus::PermFailed | beam_lib::WorkStatus::TempFailed,
+            )) => {
+                warn!("WorkStatus PermFailed: {msg:?}");
+                continue;
+            }
             Err(e) => {
                 warn!("Failed to deserialize message {msg:?} into a result: {e}");
                 continue;
@@ -280,26 +277,40 @@ async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), Pr
                 continue;
             }
         };
-        criteria_cache.cache.insert(
+        shared_state.criteria_cache.lock().await.cache.insert(
             //if successful caching the criteria
-            from.app_name().into(), // extracting site name from app long name
+            from.as_ref().split('.').nth(1).unwrap().to_string(), // extracting site name from app long name
             (criteria, std::time::SystemTime::now()),
         );
     }
     Ok(())
 }
 
-fn decode_result(msg: &async_sse::Message) -> anyhow::Result<(AppId, MeasureReport)> {
-    let result: TaskResult<RawString> = serde_json::from_slice(msg.data())?;
-    let decoded = BASE64.decode(result.body.0)?;
-    Ok((result.from, serde_json::from_slice(&decoded)?))
+fn decode_result(msg: &async_sse::Message) -> Result<(AppId, MeasureReport), PrismError> {
+    let result: TaskResult<RawString> =
+        serde_json::from_slice(msg.data()).map_err(PrismError::DeserializationError)?;
+    match result.status {
+        beam_lib::WorkStatus::Succeeded => {}
+        yep => {
+            // claimed not an error!!!!
+            return Err(PrismError::UnexpectedWorkStatusError(yep));
+        }
+    }
+    let decoded = BASE64
+        .decode(result.body.0)
+        .map_err(PrismError::DecodeError)?;
+    Ok((
+        result.from,
+        serde_json::from_slice(&decoded).map_err(PrismError::DeserializationError)?,
+    ))
 }
 
 async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
-    const MAX_RETRIES: u8 = 32;
+    const MAX_RETRIES: u8 = 3;
     let mut tries = 1;
     loop {
-        match reqwest::get(format!("{}/v1/health", CONFIG.beam_proxy_url)).await {
+        match reqwest::get(format!("http://localhost:8082/v1/health")).await {
+            //FIXME why doesn't it work with url from config
             Ok(res) if res.status() == StatusCode::OK => return Ok(()),
             _ if tries <= MAX_RETRIES => tries += 1,
             Err(e) => return Err(e.into()),
