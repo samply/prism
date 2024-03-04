@@ -20,7 +20,7 @@ pub(crate) static CONFIG: Lazy<Config> = Lazy::new(|| {
     })
 });
 
-const CLAP_FOOTER: &str = "For proxy support, environment variables HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY (and their lower-case variants) are supported. Usually, you want to set HTTP_PROXY *and* HTTPS_PROXY or set ALL_PROXY if both values are the same.\n\nFor updates and detailed usage instructions, visit https://github.com/samply/prism";
+const CLAP_FOOTER: &str = "For updates and detailed usage instructions, visit https://github.com/samply/prism";
 
 #[derive(Parser, Debug)]
 #[clap(
