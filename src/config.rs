@@ -20,7 +20,7 @@ pub(crate) static CONFIG: Lazy<Config> = Lazy::new(|| {
     })
 });
 
-const CLAP_FOOTER: &str = "For proxy support, environment variables HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY (and their lower-case variants) are supported. Usually, you want to set HTTP_PROXY *and* HTTPS_PROXY or set ALL_PROXY if both values are the same.\n\nFor updates and detailed usage instructions, visit https://github.com/samply/focus";
+const CLAP_FOOTER: &str = "For proxy support, environment variables HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY (and their lower-case variants) are supported. Usually, you want to set HTTP_PROXY *and* HTTPS_PROXY or set ALL_PROXY if both values are the same.\n\nFor updates and detailed usage instructions, visit https://github.com/samply/prism";
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -62,10 +62,6 @@ struct CliArgs {
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_addr: SocketAddr,
 
-    /// Authorization header
-    #[clap(long, env, value_parser)]
-    auth_header: Option<String>,
-
     /// Target_application_name
     #[clap(long, env, value_parser, default_value = "focus")]
     target: String,
@@ -81,7 +77,6 @@ pub(crate) struct Config {
     pub cors_origin: AllowOrigin,
     pub project: String,
     pub bind_addr: SocketAddr,
-    pub auth_header: Option<String>,
     pub query: String,
     pub target: String,
 }
@@ -99,7 +94,6 @@ impl Config {
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
-            auth_header: cli_args.auth_header,
             query: get_query(),
             target: cli_args.target,
         };
