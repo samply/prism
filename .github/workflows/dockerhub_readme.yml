@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         component:
-          - prism
+          - spot
 
     steps:
       - name: Checkout
@@ -20,7 +20,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD_REQUIRED_FOR_README_SYNC }}
-          repository: ${{ github.repository }}
+          repository: ${{ github.repository }}-${{ matrix.component }}
           readme: "./README.md"
           replace_pattern: "](./"
-          replace_with: "](${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/"
+          replace_with: "](https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/"
