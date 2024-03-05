@@ -19,7 +19,7 @@ rand = { default-features = false, version = "0.8.5" }
 chrono = "0.4.31"
 tokio = { version = "1.25.0", default_features = false, features = ["signal", "rt-multi-thread", "macros"] }
 beam-lib = { git = "https://github.com/samply/beam", branch = "develop", features = ["http-util"] }
-tower-http = { version = "0.4.4", features = ["cors"] }
+tower-http = { version = "0.5.2", features = ["cors"] }
 async-sse = "5.1.0"
 anyhow = "1"
 futures-util = { version = "0.3", features = ["io"] }
