@@ -44,7 +44,6 @@ The following environment variables are mandatory for the usage of Prism.
 ```
 
 
-
 ## Usage
 
 Creating a sample prism query asking for criteria:
@@ -52,6 +51,16 @@ Creating a sample prism query asking for criteria:
 ```bash
 curl -v -X POST -H "Content-Type: application/json" --data '{"sites": ["proxy1"]}'  http://localhost:8066/criteria
 ```
+
+
+## Roadmap
+
+:construction: This tool is still under intensive development. Features on the roadmap are:
+
+- [ ] Storage temperature stratifier
+- [ ] GBN query 
+- [ ] DKTK query
+
 
 ## License
 
