@@ -15,4 +15,5 @@ RUN cargo build --release --bin prism
 
 FROM gcr.io/distroless/cc-debian12 AS runtime
 COPY --from=builder /app/target/release/prism /usr/local/bin/
+COPY ./resources ./resources
 ENTRYPOINT ["/usr/local/bin/prism"]
