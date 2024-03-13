@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         component:
-          - spot
+          - prism
 
     steps:
       - name: Checkout
