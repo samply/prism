@@ -106,6 +106,8 @@ pub async fn main() {
         exit(2);
     }
 
+    info!("Beam ready");
+
     spawn_site_querying(shared_state.clone());
 
     let cors = CorsLayer::new()
@@ -185,14 +187,19 @@ async fn post_query(shared_state: SharedState, sites: Vec<String>) -> Result<(),
         info!("No sites to query");
         return Ok(());
     }
+    let wait_count = sites.len();
+    let site_display = sites.join(", ");
     let task = create_beam_task(sites);
+    info!("Querying sites {:?}", site_display);
     BEAM_CLIENT
         .post_task(&task)
         .await
         .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
 
+    info!("Posted task {}", task.id);
+
     tokio::spawn(async move {
-        if let Err(e) = get_results(shared_state, task.id).await {
+        if let Err(e) = get_results(shared_state, task.id, wait_count).await {
             warn!("Failed to get results for {}: {e}", task.id);
         }
     });
@@ -224,13 +231,13 @@ async fn query_sites(
     Ok(())
 }
 
-async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), PrismError> {
+async fn get_results(shared_state: SharedState, task_id: MsgId, wait_count: usize) -> Result<(), PrismError> {
     let resp = BEAM_CLIENT
         .raw_beam_request(
             Method::GET,
             &format!(
                 "v1/tasks/{}/results?wait_count={}",
-                task_id, CONFIG.wait_count
+                task_id, wait_count
             ),
         )
         .header(
@@ -282,6 +289,7 @@ async fn get_results(shared_state: SharedState, task_id: MsgId) -> Result<(), Pr
             from.as_ref().split('.').nth(1).unwrap().to_string(), // extracting site name from app long name
             (criteria, std::time::SystemTime::now()),
         );
+        info!("Cached results from site {} for task {}", from.as_ref().split('.').nth(1).unwrap().to_string(), task_id);
     }
     Ok(())
 }

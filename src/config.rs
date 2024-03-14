@@ -46,10 +46,6 @@ struct CliArgs {
     #[clap(long, env, value_parser)]
     sites: String,
 
-    /// Wait for results count
-    #[clap(long, env, value_parser, default_value = "32")]
-    wait_count: usize,
-
     /// Credentials to use on the Beam Proxy
     #[clap(long, env, value_parser = parse_cors)]
     pub cors_origin: AllowOrigin,
@@ -73,7 +69,6 @@ pub(crate) struct Config {
     pub beam_app_id_long: AppId,
     pub api_key: String,
     pub sites: Vec<String>,
-    pub wait_count: usize,
     pub cors_origin: AllowOrigin,
     pub project: String,
     pub bind_addr: SocketAddr,
@@ -90,7 +85,6 @@ impl Config {
             beam_app_id_long: AppId::new_unchecked(cli_args.beam_app_id_long),
             api_key: cli_args.api_key,
             sites: cli_args.sites.split(';').map(|s| s.to_string()).collect(),
-            wait_count: cli_args.wait_count,
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
