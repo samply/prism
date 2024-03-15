@@ -269,11 +269,11 @@ async fn get_results(shared_state: SharedState, task_id: MsgId, wait_count: usiz
     while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
         let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
-            Err(PrismError::UnexpectedWorkStatusError(beam_lib::WorkStatus::Claimed)) => {
+            Err(PrismError::UnexpectedWorkStatus(beam_lib::WorkStatus::Claimed)) => {
                 info!("Task claimed:) {msg:?}");
                 continue;
             }
-            Err(PrismError::UnexpectedWorkStatusError(
+            Err(PrismError::UnexpectedWorkStatus(
                 beam_lib::WorkStatus::PermFailed | beam_lib::WorkStatus::TempFailed,
             )) => {
                 warn!("WorkStatus PermFailed: {msg:?}");
@@ -308,7 +308,7 @@ fn decode_result(msg: &async_sse::Message) -> Result<(AppId, MeasureReport), Pri
         beam_lib::WorkStatus::Succeeded => {}
         yep => {
             // claimed not an error!!!!
-            return Err(PrismError::UnexpectedWorkStatusError(yep));
+            return Err(PrismError::UnexpectedWorkStatus(yep));
         }
     }
     let decoded = BASE64
@@ -324,7 +324,7 @@ async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
     const MAX_RETRIES: u8 = 3;
     let mut tries = 1;
     loop {
-        match reqwest::get(format!("{}v1/health", CONFIG.beam_proxy_url.to_string())).await {
+        match reqwest::get(format!("{}v1/health", CONFIG.beam_proxy_url)).await {
             //FIXME why doesn't it work with url from config
             Ok(res) if res.status() == StatusCode::OK => return Ok(()),
             _ if tries <= MAX_RETRIES => tries += 1,
