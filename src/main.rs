@@ -35,7 +35,7 @@ use beam_lib::{AppId, BeamClient, MsgId};
 use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, debug};
 
 use beam_lib::{RawString, TaskResult};
 
@@ -147,17 +147,24 @@ async fn handle_get_criteria(
     let mut criteria_groups: CriteriaGroups = CriteriaGroups::new(); // this is going to be aggregated criteria for all the sites
 
     for site in query.clone().sites {
+        debug!("Request for site {}", &site);
         let criteria_groups_from_cache =
             match shared_state.criteria_cache.lock().await.cache.get(&site) {
                 Some(cached) => {
                     //Prism only uses the cached results if they are not expired
+                    debug!("Results for site {} found in cache", &site);
                     if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
                         Some(cached.0.clone())
                     } else {
+                        debug!("Results for site {} in cache sadly expired, will query again", &site);
                         None
+                        
                     }
                 }
-                None => None,
+                None => {
+                    debug!("Results for site {} in cache not found in cache", &site);
+                    None
+                }
             };
 
         if let Some(cached_criteria_groups) = criteria_groups_from_cache {
