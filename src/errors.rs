@@ -2,8 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PrismError {
-    #[error("Configuration error: {0}")]
-    ConfigurationError(String),
     #[error("Parsing error: {0}")]
     ParsingError(String),
     #[error("Beam error: {0}")]
@@ -13,5 +11,5 @@ pub enum PrismError {
     #[error("Decode error: {0}")]
     DecodeError(base64::DecodeError),
     #[error("Unexpected WorkStatus: {0:?}")]
-    UnexpectedWorkStatusError(beam_lib::WorkStatus),
+    UnexpectedWorkStatus(beam_lib::WorkStatus),
 }
