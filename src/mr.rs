@@ -104,8 +104,8 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups,
                 .ok_or_else(|| PrismError::ParsingError("Missing criterion key".into()))?
                 .text
                 .clone();
-            if let Some(strati) = &s.stratum {
-                for stratum in strati {
+            if let Some(strata) = &s.stratum {
+                for stratum in strata {
                     let stratum_key = stratum.value.text.clone();
                     let value = stratum
                         .population
