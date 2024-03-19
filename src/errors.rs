@@ -6,7 +6,7 @@ pub enum PrismError {
     ParsingError(String),
     #[error("Beam error: {0}")]
     BeamError(String),
-    #[error("CQL tampered with: {0}")]
+    #[error("Deserialization error: {0}")]
     DeserializationError(serde_json::Error),
     #[error("Decode error: {0}")]
     DecodeError(base64::DecodeError),

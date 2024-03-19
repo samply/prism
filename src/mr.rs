@@ -85,7 +85,7 @@ struct Stratum {
 #[derive(Debug, Deserialize, Serialize)]
 struct Stratifier {
     code: Vec<Code>,
-    stratum: Vec<Stratum>,
+    stratum: Option<Vec<Stratum>>,
 }
 
 pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups, PrismError> {
@@ -104,16 +104,17 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups,
                 .ok_or_else(|| PrismError::ParsingError("Missing criterion key".into()))?
                 .text
                 .clone();
+            if let Some(strata) = &s.stratum {
+                for stratum in strata {
+                    let stratum_key = stratum.value.text.clone();
+                    let value = stratum
+                        .population
+                        .first()
+                        .ok_or_else(|| PrismError::ParsingError("Missing criterion count".into()))?
+                        .count;
 
-            for stratum in &s.stratum {
-                let stratum_key = stratum.value.text.clone();
-                let value = stratum
-                    .population
-                    .first()
-                    .ok_or_else(|| PrismError::ParsingError("Missing criterion count".into()))?
-                    .count;
-
-                criteria.insert(stratum_key, value);
+                    criteria.insert(stratum_key, value);
+                }
             }
             criteria_group.insert(criteria_key, criteria);
         }
