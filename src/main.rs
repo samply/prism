@@ -270,7 +270,7 @@ async fn get_results(shared_state: SharedState, task_id: MsgId, wait_count: usiz
         let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
             Err(PrismError::UnexpectedWorkStatus(beam_lib::WorkStatus::Claimed)) => {
-                info!("Task claimed:) {msg:?}");
+                info!("Task claimed");
                 continue;
             }
             Err(PrismError::UnexpectedWorkStatus(
