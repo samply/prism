@@ -10,6 +10,8 @@ use std::net::SocketAddr;
 use reqwest::Url;
 use tower_http::cors::AllowOrigin;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
 use crate::errors::PrismError;
 
 pub(crate) static CONFIG: Lazy<Config> = Lazy::new(|| {
@@ -20,7 +22,8 @@ pub(crate) static CONFIG: Lazy<Config> = Lazy::new(|| {
     })
 });
 
-const CLAP_FOOTER: &str = "For updates and detailed usage instructions, visit https://github.com/samply/prism";
+const CLAP_FOOTER: &str =
+    "For updates and detailed usage instructions, visit https://github.com/samply/prism";
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -72,7 +75,7 @@ pub(crate) struct Config {
     pub cors_origin: AllowOrigin,
     pub project: String,
     pub bind_addr: SocketAddr,
-    pub query: String,
+    pub query_unencoded: String,
     pub target: String,
 }
 
@@ -88,17 +91,29 @@ impl Config {
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
-            query: get_query(),
+            query_unencoded: get_query_unencoded(),
             target: cli_args.target,
         };
         Ok(config)
     }
 }
 
-fn get_query() -> String {
-    let query_file_name = format!("resources/query_{}.encoded", CliArgs::parse().project);
-    fs::read_to_string(&query_file_name)
-        .unwrap_or_else(|_| panic!("File {} can't be read", &query_file_name))
+fn get_query_unencoded() -> String {
+    let cql_file_name: String = format!("resources/query_{}.cql", CliArgs::parse().project);
+    let body_file_name = format!("resources/body_{}.json", CliArgs::parse().project);
+
+    fs::read_to_string(&body_file_name)
+        .unwrap_or_else(|_| panic!("File {} can't be read", &body_file_name))
+        .replace(
+            "{{LIBRARY_ENCODED}}",
+            BASE64
+                .encode(
+                    fs::read_to_string(&cql_file_name)
+                        .unwrap_or_else(|_| panic!("File {} can't be read", &cql_file_name))
+                        .as_str(),
+                )
+                .as_str(),
+        )
 }
 
 fn parse_cors(v: &str) -> Result<AllowOrigin, http::header::InvalidHeaderValue> {
