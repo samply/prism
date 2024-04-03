@@ -146,7 +146,15 @@ async fn handle_get_criteria(
 ) -> Result<Response, (StatusCode, String)> {
     let mut criteria_groups: CriteriaGroups = CriteriaGroups::new(); // this is going to be aggregated criteria for all the sites
 
-    for site in query.clone().sites {
+    let mut sites = query.clone().sites;
+
+    // allowing empty list of sites in the request because Spot is going to query with the empty list and expect response for the sites in Prism's config
+
+    if sites.is_empty() {
+        sites = CONFIG.sites.clone();
+    }
+
+    for site in sites {
         debug!("Request for site {}", &site);
         let criteria_groups_from_cache =
             match shared_state.criteria_cache.lock().await.cache.get(&site) {
