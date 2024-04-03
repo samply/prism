@@ -146,7 +146,7 @@ async fn handle_get_criteria(
 ) -> Result<Response, (StatusCode, String)> {
     let mut criteria_groups: CriteriaGroups = CriteriaGroups::new(); // this is going to be aggregated criteria for all the sites
 
-    let mut sites = query.clone().sites;
+    let mut sites = query.sites;
 
     // allowing empty list of sites in the request because Spot is going to query with the empty list and expect response for the sites in Prism's config
 
