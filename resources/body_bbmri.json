@@ -23,7 +23,7 @@
 		"group": [
 			{
 				"code": {
-					"text": "patients"
+					"text": "patient"
 				},
 				"population": [
 					{
@@ -44,7 +44,7 @@
 				"stratifier": [
 					{
 						"code": {
-							"text": "Gender"
+							"text": "gender"
 						},
 						"criteria": {
 							"expression": "Gender",
