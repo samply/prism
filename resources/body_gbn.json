@@ -44,7 +44,7 @@
 				"stratifier": [
 					{
 						"code": {
-							"text": "Gender"
+							"text": "gender"
 						},
 						"criteria": {
 							"expression": "Gender",
