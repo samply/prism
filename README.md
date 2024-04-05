@@ -1,6 +1,6 @@
 # Prism
 
-Prism is a Samply component ran centrally, which queries sites for criteria and number of results for these criteria in their Samply.Blaze stores. Prism is to be used by Samply.Lens for showing expected number of results next to criteria in the search tree. 
+Prism is a Samply component ran centrally, which queries sites for criteria and number of results for these criteria in their Samply.Blaze stores. Prism is to be used by Samply.Spot or Samply.Lens for showing expected number of results next to criteria in the search tree. 
 
 ## Installation
 
