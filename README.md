@@ -1,6 +1,6 @@
 # Prism
 
-Prism is a Samply component ran centrally, which queries sites for criteria and number of results for these criteria in their Samply.Blaze stores. Prism is to be used by Samply.Lens for showing expected number of results next to criteria in the search tree. 
+Prism is a Samply component ran centrally, which queries sites for criteria and number of results for these criteria in their Samply.Blaze stores. Prism is to be used by Samply.Spot or Samply.Lens for showing expected number of results next to criteria in the search tree. 
 
 ## Installation
 
@@ -27,7 +27,7 @@ The following environment variables are mandatory for the usage of Prism.
 --sites <SITES>
     Sites to initially query, separated by ';' [env: SITES=]
 --cors-origin <CORS_ORIGIN>
-    Credentials to use on the Beam Proxy [env: CORS_ORIGIN=]
+    Where to allow cross-origin resourse sharing from [env: CORS_ORIGIN=]
 --project <PROJECT>
     Project name [env: PROJECT=]
 ```
@@ -50,6 +50,12 @@ Creating a sample prism query asking for criteria:
 
 ```bash
 curl -v -X POST -H "Content-Type: application/json" --data '{"sites": ["proxy1"]}'  http://localhost:8066/criteria
+```
+
+If the list of the sites is empty, Prism returns the expected number of results in all the sites in its configuration.
+
+```bash
+curl -v -X POST -H "Content-Type: application/json" --data '{"sites": []}'  http://localhost:8066/criteria
 ```
 
 
