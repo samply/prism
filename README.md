@@ -52,6 +52,12 @@ Creating a sample prism query asking for criteria:
 curl -v -X POST -H "Content-Type: application/json" --data '{"sites": ["proxy1"]}'  http://localhost:8066/criteria
 ```
 
+If the list of the sites is empty, Prism returns the expected number of results in all the sites in its configuration.
+
+```bash
+curl -v -X POST -H "Content-Type: application/json" --data '{"sites": []}'  http://localhost:8066/criteria
+```
+
 
 ## Roadmap
 
