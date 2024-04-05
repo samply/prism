@@ -27,7 +27,7 @@ The following environment variables are mandatory for the usage of Prism.
 --sites <SITES>
     Sites to initially query, separated by ';' [env: SITES=]
 --cors-origin <CORS_ORIGIN>
-    Credentials to use on the Beam Proxy [env: CORS_ORIGIN=]
+    Where to allow cross-origin resourse sharing from [env: CORS_ORIGIN=]
 --project <PROJECT>
     Project name [env: PROJECT=]
 ```
