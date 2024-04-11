@@ -252,10 +252,10 @@
 				"stratifier": [
 					{
 						"code": {
-							"text": "Histlogoies"
+							"text": "Histologies"
 						},
 						"criteria": {
-							"expression": "Histlogoy",
+							"expression": "Histology",
 							"language": "text/cql-identifier"
 						}
 					}
