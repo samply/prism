@@ -60,10 +60,17 @@ struct ValueQuantity {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct ValueRatio {
+    denominator: Value,
+    numerator: Value,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Extension {
     url: String,
-    value_quantity: ValueQuantity,
+    value_quantity: Option<ValueQuantity>,
+    value_ratio: Option<ValueRatio>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
