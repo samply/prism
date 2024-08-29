@@ -116,7 +116,7 @@ fn get_query_unencoded() -> String {
         )
 }
 
-fn parse_cors(v: &str) -> Result<AllowOrigin, http::header::InvalidHeaderValue> {
+fn parse_cors(v: &str) -> Result<AllowOrigin, reqwest::header::InvalidHeaderValue> {
     if v == "*" || v.to_lowercase() == "any" {
         Ok(AllowOrigin::any())
     } else {
