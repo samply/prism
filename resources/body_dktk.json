@@ -260,6 +260,44 @@
 						}
 					}
 				]
+			},
+			{
+				"code": {
+					"text": "MolecularMarker"
+				},
+				"extension": [
+					{
+						"url": "http://dktk.dkfz.de/fhir/StructureDefinition/onco-core-Observation-GenetischeVariante",
+						"valueCode": "Observation"
+					}
+				],
+				"population": [
+					{
+						"code": {
+							"coding": [
+								{
+									"code": "initial-population",
+									"system": "http://terminology.hl7.org/CodeSystem/measure-population"
+								}
+							]
+						},
+						"criteria": {
+							"expression": "GeneticVariantCount",
+							"language": "text/cql-identifier"
+						}
+					}
+				],
+				"stratifier": [
+					{
+						"code": {
+							"text": "MolecularMarkers"
+						},
+						"criteria": {
+							"expression": "GeneticVariantCode",
+							"language": "text/cql-identifier"
+						}
+					}
+				]
 			}
 		],
 		"library": "{{LIBRARY_UUID}}",
