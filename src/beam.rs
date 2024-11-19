@@ -4,7 +4,7 @@ use beam_lib::{AppId, MsgId, RawString, TaskRequest};
 use uuid::Uuid;
 
 pub fn create_beam_task(target_sites: Vec<String>) -> TaskRequest<RawString> {
-    let target = &CONFIG.target;
+    let target_app = &CONFIG.target_app;
     let id = MsgId::new();
     let proxy_id = &CONFIG.beam_app_id_long.proxy_id();
     let query_encoded: String = BASE64.encode(
@@ -20,7 +20,7 @@ pub fn create_beam_task(target_sites: Vec<String>) -> TaskRequest<RawString> {
         .1;
     let to = target_sites
         .iter()
-        .map(|site| AppId::new_unchecked(format!("{target}.{site}.{broker_id}")))
+        .map(|site| AppId::new_unchecked(format!("{target_app}.{site}.{broker_id}")))
         .collect();
     let metadata = {
         serde_json::json!({

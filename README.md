@@ -10,7 +10,7 @@ To run a standalone Prism, you need at least one running [Samply.Beam.Proxy](htt
 You can compile and run this application via Cargo.:
 
 ```bash
-cargo run -- --beam-proxy-url http://localhost:8082 --beam-app-id-long app2.proxy2.broker --api-key App1Secret --bind-addr 127.0.0.1:8066 --sites proxy1 --cors-origin any --project bbmri --target app1
+cargo run -- --beam-proxy-url http://localhost:8082 --beam-app-id-long app2.proxy2.broker --api-key App1Secret --bind-addr 127.0.0.1:8066 --sites proxy1 --cors-origin any --project bbmri --target-app app1
 ```
 
 ## Configuration
@@ -37,8 +37,8 @@ The following environment variables are mandatory for the usage of Prism.
 ```      
 --wait-count <WAIT_COUNT>
     Wait for results count [env: WAIT_COUNT=] [default: 32]
---target <TARGET>
-    Target_application_name [env: TARGET=] [default: focus]
+--target-app <TARGET_APP>
+    Target application name [env: TARGET_APP=] [default: focus]
 --bind-addr <BIND_ADDR>
     The socket address this server will bind to [env: BIND_ADDR=] [default: 0.0.0.0:8080]
 ```
