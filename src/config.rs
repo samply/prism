@@ -63,7 +63,7 @@ struct CliArgs {
 
     /// Target_application_name
     #[clap(long, env, value_parser, default_value = "focus")]
-    target: String,
+    target_app: String,
 }
 
 #[derive(Debug)]
@@ -76,7 +76,7 @@ pub(crate) struct Config {
     pub project: String,
     pub bind_addr: SocketAddr,
     pub query_unencoded: String,
-    pub target: String,
+    pub target_app: String,
 }
 
 impl Config {
@@ -92,7 +92,7 @@ impl Config {
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
             query_unencoded: get_query_unencoded(),
-            target: cli_args.target,
+            target_app: cli_args.target_app,
         };
         Ok(config)
     }
