@@ -336,7 +336,7 @@ fn decode_result(msg: &async_sse::Message) -> Result<(AppId, MeasureReport), Pri
 }
 
 async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
-    const MAX_RETRIES: u8 = 3;
+    const MAX_RETRIES: u8 = 10;
     let mut tries = 1;
     loop {
         match reqwest::get(format!("{}v1/health", CONFIG.beam_proxy_url)).await {
