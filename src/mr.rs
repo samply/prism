@@ -1,5 +1,5 @@
 use crate::{
-    criteria::{Criteria, CriteriaGroup, CriteriaGroups},
+    criteria::{Criteria, Stratifiers},
     errors::PrismError,
 };
 use serde::{Deserialize, Serialize};
@@ -95,12 +95,12 @@ struct Stratifier {
     stratum: Option<Vec<Stratum>>,
 }
 
-pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups, PrismError> {
-    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new();
+pub fn extract_criteria(measure_report: MeasureReport) -> Result<Stratifiers, PrismError> {
+    //let mut criteria_groups: CriteriaGroups = CriteriaGroups::new();
+
+    let mut stratifiers = Stratifiers::new();
 
     for g in &measure_report.group {
-        let mut criteria_group = CriteriaGroup::new();
-        let criteria_group_key = &g.code.text[..];
 
         for s in &g.stratifier {
             let mut criteria = Criteria::new();
@@ -123,11 +123,10 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<CriteriaGroups,
                     criteria.insert(stratum_key, value);
                 }
             }
-            criteria_group.insert(criteria_key, criteria);
+            stratifiers.insert(criteria_key, criteria);
         }
-        criteria_groups.insert(criteria_group_key.into(), criteria_group);
     }
-    Ok(criteria_groups)
+    Ok(stratifiers)
 }
 
 #[cfg(test)]
@@ -148,12 +147,12 @@ mod test {
         let measure_report: MeasureReport =
             serde_json::from_str(&EXAMPLE_MEASURE_REPORT_BBMRI).expect("Can't be deserialized");
 
-        let criteria_groups =
+        let stratifiers =
             extract_criteria(measure_report).expect("what, no proper criteria groups");
 
-        let criteria_groups_json = serde_json::to_string(&criteria_groups).expect("Should be JSON");
+        let stratifiers_json = serde_json::to_string(&stratifiers).expect("Should be JSON");
 
-        pretty_assertions::assert_eq!(CRITERIA_GROUPS_BBMRI, criteria_groups_json);
+        pretty_assertions::assert_eq!(CRITERIA_GROUPS_BBMRI, stratifiers_json);
     }
 
     #[test]
@@ -161,11 +160,11 @@ mod test {
         let measure_report: MeasureReport =
             serde_json::from_str(&EXAMPLE_MEASURE_REPORT_DKTK).expect("Can't be deserialized");
 
-        let criteria_groups =
+        let stratifiers =
             extract_criteria(measure_report).expect("what, no proper criteria groups");
 
-        let criteria_groups_json = serde_json::to_string(&criteria_groups).expect("Should be JSON");
+        let stratifiers_json = serde_json::to_string(&stratifiers).expect("Should be JSON");
 
-        pretty_assertions::assert_eq!(CRITERIA_GROUPS_DKTK, criteria_groups_json);
+        pretty_assertions::assert_eq!(CRITERIA_GROUPS_DKTK, stratifiers_json);
     }
 }
