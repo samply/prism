@@ -176,7 +176,7 @@
 				"stratifier": [
 					{
 						"code": {
-							"text": "ProcedureType"
+							"text": "therapy_of_tumor"
 						},
 						"criteria": {
 							"expression": "ProcedureType",
