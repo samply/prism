@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-pub type Criteria = BTreeMap<String, u64>;
+pub type Criteria = BTreeMap<String, u64>; //stratifier
 
-pub type CriteriaGroup = BTreeMap<String, Criteria>;
+pub type Stratifiers = BTreeMap<String, Criteria>; //group
 
-pub type CriteriaGroups = BTreeMap<String, CriteriaGroup>;
+#[allow(dead_code)]
+pub type CriteriaGroups = BTreeMap<String, Stratifiers>; //the entire structure containing groups
 
 // groups of groups of criteria follow the measure report structure
 // for example criteria "female", "male", "other", and "unknown" belong to the group "gender", and the group "gender" together with the group "age" belongs to the group of groups "patient"
+// 2025-06-06 refactored extraction to remove groups and add all the stratifiers into one BTreeMap, function preserved in case another project needs groups
 
 fn combine_maps(map1: Criteria, map2: Criteria) -> Criteria { // here individual criteria are combined and their numbers added, for example 2 maps of gender criteria (see test)
     let mut combined_map = map1;
@@ -17,7 +19,7 @@ fn combine_maps(map1: Criteria, map2: Criteria) -> Criteria { // here individual
     combined_map
 }
 
-fn combine_criteria_groups(group1: CriteriaGroup, group2: CriteriaGroup) -> CriteriaGroup { // here criteria groups are combined in a way that criteria maps having the same key are combined, for example 2 maps of patients
+pub fn combine_criteria_groups(group1: Stratifiers, group2: Stratifiers) -> Stratifiers { // here criteria groups are combined in a way that criteria maps having the same key are combined, for example 2 maps of patients
     let mut combined_group = group1;
 
     for (key, criteria) in group2 {
@@ -34,7 +36,8 @@ fn combine_criteria_groups(group1: CriteriaGroup, group2: CriteriaGroup) -> Crit
     combined_group
 }
 
-pub fn combine_groups_of_criteria_groups(groups1: CriteriaGroups, groups2: CriteriaGroups) -> CriteriaGroups { // here groups of criteria groups are combined in a way that groups of criteria groups are combined using the previous function
+#[allow(dead_code)]
+fn combine_groups_of_criteria_groups(groups1: CriteriaGroups, groups2: CriteriaGroups) -> CriteriaGroups { // here groups of criteria groups are combined in a way that groups of criteria groups are combined using the previous function
     let mut combined_groups = groups1; // this function is used to combine maps for all the sites
 
     for (key, criteria_group) in groups2 {
@@ -73,7 +76,7 @@ mod test {
 
         let combined_map = combine_maps(map1.clone(), map2.clone());
 
-        let criteria_group: CriteriaGroup =
+        let criteria_group: Stratifiers =
             [("gender".into(), combined_map)].iter().cloned().collect();
 
         let criteria_group_json =
@@ -81,10 +84,10 @@ mod test {
 
         pretty_assertions::assert_eq!(CRITERIA_GROUP_JSON, criteria_group_json);
 
-        let criteria_group1: CriteriaGroup =
+        let criteria_group1: Stratifiers =
         [("gender".into(), map1)].iter().cloned().collect();
 
-        let criteria_group2: CriteriaGroup =
+        let criteria_group2: Stratifiers =
         [("gender".into(), map2)].iter().cloned().collect();
 
         let criteria_group_combined = combine_criteria_groups(criteria_group1.clone(), criteria_group2.clone());

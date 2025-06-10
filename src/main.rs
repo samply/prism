@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use beam::create_beam_task;
 use beam_lib::{AppId, BeamClient, MsgId};
-use criteria::{combine_groups_of_criteria_groups, CriteriaGroups};
+use criteria::{combine_criteria_groups, Stratifiers};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
@@ -55,7 +55,7 @@ type Created = std::time::SystemTime; //epoch
 
 #[derive(Debug, Clone)]
 struct CriteriaCache {
-    cache: HashMap<Site, (CriteriaGroups, Created)>,
+    cache: HashMap<Site, (Stratifiers, Created)>,
 }
 const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //cached criteria expire after 24h
 
@@ -144,7 +144,7 @@ async fn handle_get_criteria(
     State(shared_state): State<SharedState>,
     Json(query): Json<LensQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    let mut criteria_groups: CriteriaGroups = CriteriaGroups::new(); // this is going to be aggregated criteria for all the sites
+    let mut stratifiers: Stratifiers = Stratifiers::new(); // this is going to be aggregated criteria for all the sites
 
     let mut sites = query.sites;
 
@@ -156,7 +156,7 @@ async fn handle_get_criteria(
 
     for site in sites {
         debug!("Request for site {}", &site);
-        let criteria_groups_from_cache =
+        let stratifiers_from_cache =
             match shared_state.criteria_cache.lock().await.cache.get(&site) {
                 Some(cached) => {
                     //Prism only uses the cached results if they are not expired
@@ -177,10 +177,10 @@ async fn handle_get_criteria(
                 }
             };
 
-        if let Some(cached_criteria_groups) = criteria_groups_from_cache {
+        if let Some(cached_stratifiers) = stratifiers_from_cache {
             //cached and not expired
-            criteria_groups =
-                combine_groups_of_criteria_groups(criteria_groups, cached_criteria_groups);
+            stratifiers =
+                combine_criteria_groups(stratifiers, cached_stratifiers);
         // adding all the criteria to the ones already in criteria_groups
         } else {
             //not cached or expired
@@ -188,13 +188,13 @@ async fn handle_get_criteria(
         }
     }
 
-    let criteria_groups_json =
-        serde_json::to_string(&criteria_groups).expect("Failed to serialize JSON");
+    let stratifiers_json =
+        serde_json::to_string(&stratifiers).expect("Failed to serialize JSON");
 
     let response_builder = Response::builder().status(StatusCode::OK);
 
     Ok(response_builder
-        .body(axum::body::Body::from(criteria_groups_json))
+        .body(axum::body::Body::from(stratifiers_json))
         .unwrap()
         .into_response())
 }
