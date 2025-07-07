@@ -57,7 +57,7 @@ type Created = std::time::SystemTime; //epoch
 struct CriteriaCache {
     cache: HashMap<Site, (Stratifiers, Created)>,
 }
-const CRITERIACACHE_TTL: Duration = Duration::from_secs(86400); //cached criteria expire after 24h
+const CRITERIACACHE_TTL: Duration = Duration::from_secs(7200); //cached criteria expire after 2h
 
 #[derive(Clone)]
 struct SharedState {
