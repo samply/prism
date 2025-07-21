@@ -3,10 +3,10 @@ mod config;
 mod criteria;
 mod errors;
 mod logger;
-mod mr;
+mod measure_report;
 
 use crate::errors::PrismError;
-use crate::{config::CONFIG, mr::MeasureReport, mr::extract_criteria};
+use crate::{config::CONFIG, measure_report::MeasureReport, measure_report::extract_criteria};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{StreamExt as _, TryStreamExt};
 use std::collections::HashSet;
