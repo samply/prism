@@ -6,8 +6,8 @@ mod logger;
 mod mr;
 
 use crate::errors::PrismError;
-use crate::{config::CONFIG, mr::MeasureReport};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use crate::{config::CONFIG, mr::MeasureReport, mr::extract_criteria};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{StreamExt as _, TryStreamExt};
 use std::collections::HashSet;
 use std::io;
@@ -17,20 +17,20 @@ use std::time::SystemTime;
 use tokio::{net::TcpListener, sync::Mutex};
 
 use axum::{
+    Router,
     extract::{Json, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::post,
-    Router,
 };
-use reqwest::{header, header::HeaderValue, Method};
+use reqwest::{Method, header, header::HeaderValue};
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use beam::create_beam_task;
 use beam_lib::{AppId, BeamClient, MsgId};
-use criteria::{combine_criteria_groups, Stratifiers};
+use criteria::{Stratifiers, combine_criteria_groups};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
@@ -156,31 +156,30 @@ async fn handle_get_criteria(
 
     for site in sites {
         debug!("Request for site {}", &site);
-        let stratifiers_from_cache =
-            match shared_state.criteria_cache.lock().await.cache.get(&site) {
-                Some(cached) => {
-                    //Prism only uses the cached results if they are not expired
-                    debug!("Results for site {} found in cache", &site);
-                    if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
-                        Some(cached.0.clone())
-                    } else {
-                        debug!(
-                            "Results for site {} in cache sadly expired, will query again",
-                            &site
-                        );
-                        None
-                    }
-                }
-                None => {
-                    debug!("Results for site {} in cache not found in cache", &site);
+        let stratifiers_from_cache = match shared_state.criteria_cache.lock().await.cache.get(&site)
+        {
+            Some(cached) => {
+                //Prism only uses the cached results if they are not expired
+                debug!("Results for site {} found in cache", &site);
+                if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
+                    Some(cached.0.clone())
+                } else {
+                    debug!(
+                        "Results for site {} in cache sadly expired, will query again",
+                        &site
+                    );
                     None
                 }
-            };
+            }
+            None => {
+                debug!("Results for site {} in cache not found in cache", &site);
+                None
+            }
+        };
 
         if let Some(cached_stratifiers) = stratifiers_from_cache {
             //cached and not expired
-            stratifiers =
-                combine_criteria_groups(stratifiers, cached_stratifiers);
+            stratifiers = combine_criteria_groups(stratifiers, cached_stratifiers);
         // adding all the criteria to the ones already in criteria_groups
         } else {
             //not cached or expired
@@ -188,8 +187,7 @@ async fn handle_get_criteria(
         }
     }
 
-    let stratifiers_json =
-        serde_json::to_string(&stratifiers).expect("Failed to serialize JSON");
+    let stratifiers_json = serde_json::to_string(&stratifiers).expect("Failed to serialize JSON");
 
     let response_builder = Response::builder().status(StatusCode::OK);
 
@@ -295,7 +293,7 @@ async fn get_results(
                 continue;
             }
         };
-        let criteria = match mr::extract_criteria(measure_report) {
+        let criteria = match extract_criteria(measure_report) {
             Ok(c) => c,
             Err(e) => {
                 warn!("Failed to extract criteria from {from}: {e}");
@@ -347,7 +345,7 @@ async fn wait_for_beam_proxy() -> beam_lib::Result<()> {
             Ok(res) => {
                 return Err(beam_lib::BeamError::Other(
                     format!("Proxy reachable but failed to start {}", res.status()).into(),
-                ))
+                ));
             }
         }
         tokio::time::sleep(Duration::from_secs(1)).await;

@@ -8,9 +8,7 @@ use build_data::get_git_dirty;
 fn version() -> String {
     let version = String::from(env!("CARGO_PKG_VERSION"));
     match get_git_dirty().unwrap() {
-        false => {
-            version
-        },
+        false => version,
         true => {
             format!("{}-SNAPSHOT", version)
         }
@@ -24,6 +22,9 @@ fn main() {
     build_data::set_BUILD_TIME();
     // We must always run this build script as otherwise, we would cache old versions of CQL maps
     //build_data::no_debug_rebuilds();
-    println!("cargo:rustc-env=SAMPLY_USER_AGENT=Samply.Prism.{}/{}", env!("CARGO_PKG_NAME"), version());
-
+    println!(
+        "cargo:rustc-env=SAMPLY_USER_AGENT=Samply.Prism.{}/{}",
+        env!("CARGO_PKG_NAME"),
+        version()
+    );
 }

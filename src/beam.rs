@@ -1,5 +1,5 @@
 use crate::config::CONFIG;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use beam_lib::{AppId, MsgId, RawString, TaskRequest};
 use uuid::Uuid;
 
