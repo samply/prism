@@ -144,6 +144,15 @@
               "expression": "SampleType",
               "language": "text/cql"
             }
+          },
+          {
+            "code": {
+              "text": "storage_temp"
+            },
+            "criteria": {
+              "expression": "StorageTemperature",
+              "language": "text/cql"
+            }
           }
         ]
       }
