@@ -28,11 +28,22 @@ wait_for_service() {
     echo "✅ ${service_name} started after ${attempt} seconds"
 }
 
+# Start Broker
+docker run -d --name ${BROKER_SERVICE} \
+  --network ${DOCKER_NETWORK} \
+  -p ${BROKER_PORT}:8080 \
+  -e BROKER_ID="${BROKER_ID}" \
+  -v "${PKI_SECRET_FILE}:/run/secrets/pki.secret" \
+  samply/beam-broker:${BEAM_VERSION} \
+  --broker-url "http://${BROKER_SERVICE}:8080" \
+  --pki-address "http://${BROKER_SERVICE}:8080"
+wait_for_service ${BROKER_PORT} ${BROKER_SERVICE}
+
 # Start Beam Proxy
 docker run -d --name ${BEAM_PROXY_SERVICE} \
   --network ${DOCKER_NETWORK} \
   -p ${BEAM_PROXY_PORT}:8082 \
-  -e BROKER_URL="http://${BEAM_PROXY_SERVICE}:8082" \
+  -e BROKER_URL="http://${BROKER_SERVICE}:8080" \
   -e PROXY_ID="${BEAM_PROXY_SERVICE}.${BROKER_ID}" \
   samply/beam-proxy:${BEAM_VERSION}
 wait_for_service ${BEAM_PROXY_PORT} ${BEAM_PROXY_SERVICE}
