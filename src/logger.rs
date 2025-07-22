@@ -1,4 +1,4 @@
-use tracing::{Level, debug, dispatcher::SetGlobalDefaultError};
+use tracing::{debug, dispatcher::SetGlobalDefaultError, Level};
 
 #[allow(clippy::if_same_then_else)] // The redundant if-else serves documentation purposes
 pub fn init_logger() -> Result<(), SetGlobalDefaultError> {

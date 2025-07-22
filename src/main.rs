@@ -6,8 +6,8 @@ mod logger;
 mod measure_report;
 
 use crate::errors::PrismError;
-use crate::{config::CONFIG, measure_report::MeasureReport, measure_report::extract_criteria};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use crate::{config::CONFIG, measure_report::extract_criteria, measure_report::MeasureReport};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures_util::{StreamExt as _, TryStreamExt};
 use std::collections::HashSet;
 use std::io;
@@ -17,20 +17,20 @@ use std::time::SystemTime;
 use tokio::{net::TcpListener, sync::Mutex};
 
 use axum::{
-    Router,
     extract::{Json, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::post,
+    Router,
 };
-use reqwest::{Method, header, header::HeaderValue};
+use reqwest::{header, header::HeaderValue, Method};
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use beam::create_beam_task;
 use beam_lib::{AppId, BeamClient, MsgId};
-use criteria::{Stratifiers, combine_criteria_groups};
+use criteria::{combine_criteria_groups, Stratifiers};
 use std::{collections::HashMap, time::Duration};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
