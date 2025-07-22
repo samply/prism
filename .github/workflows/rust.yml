@@ -18,6 +18,7 @@ jobs:
         components: '[ "prism" ]'
         test-via-script: false
         push-to: ${{ (github.ref_protected == true || github.event_name == 'workflow_dispatch') && 'dockerhub' || 'none' }}
+        cargo-fmt-check: true
     secrets:
         DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
