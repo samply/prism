@@ -101,7 +101,6 @@ pub fn extract_criteria(measure_report: MeasureReport) -> Result<Stratifiers, Pr
     let mut stratifiers = Stratifiers::new();
 
     for g in &measure_report.group {
-
         for s in &g.stratifier {
             let mut criteria = Criteria::new();
 
