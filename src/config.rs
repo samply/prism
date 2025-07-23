@@ -45,9 +45,9 @@ struct CliArgs {
     #[clap(long, env, value_parser)]
     api_key: String,
 
-    /// Sites to initially query, separated by ';'
-    #[clap(long, env, value_parser)]
-    sites: String,
+    /// Comma separated list of sites to initially query
+    #[clap(long, env, value_parser, value_delimiter = ',')]
+    sites: Vec<String>,
 
     /// Where to allow cross-origin resourse sharing from
     #[clap(long, env, value_parser = parse_cors)]
@@ -87,7 +87,7 @@ impl Config {
             beam_proxy_url: cli_args.beam_proxy_url,
             beam_app_id_long: AppId::new_unchecked(cli_args.beam_app_id_long),
             api_key: cli_args.api_key,
-            sites: cli_args.sites.split(';').map(|s| s.to_string()).collect(),
+            sites: cli_args.sites,
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
