@@ -35,7 +35,7 @@ The following environment variables are mandatory for the usage of Prism.
 --api-key <API_KEY>
     This application's beam API key [env: API_KEY=]
 --sites <SITES>
-    Sites to initially query, separated by ';' [env: SITES=]
+    Comma separated list of sites to initially query [env: SITES=]
 --cors-origin <CORS_ORIGIN>
     Where to allow cross-origin resourse sharing from [env: CORS_ORIGIN=]
 --project <PROJECT>
