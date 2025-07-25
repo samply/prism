@@ -161,34 +161,26 @@ async fn handle_get_criteria(
 
     for site in sites {
         debug!("Request for site {}", &site);
-        let stratifiers_from_cache = match shared_state.criteria_cache.lock().await.cache.get(&site)
+        match shared_state.criteria_cache.lock().await.cache.get(&site)
         {
             Some(cached) => {
-                //Prism only uses the cached results if they are not expired
                 debug!("Results for site {} found in cache", &site);
-                if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
-                    Some(cached.0.clone())
-                } else {
+
+                // Include cached result in response even if expired, so the client gets something
+                stratifiers = combine_criteria_groups(stratifiers, cached.0.clone());
+
+                if SystemTime::now().duration_since(cached.1).unwrap() >= CRITERIACACHE_TTL {
                     debug!(
                         "Results for site {} in cache sadly expired, will query again",
                         &site
                     );
-                    None
+                    shared_state.sites_to_query.lock().await.insert(site);
                 }
             }
             None => {
-                debug!("Results for site {} in cache not found in cache", &site);
-                None
+                debug!("Results for site {} not found in cache, will query", &site);
+                shared_state.sites_to_query.lock().await.insert(site);
             }
-        };
-
-        if let Some(cached_stratifiers) = stratifiers_from_cache {
-            //cached and not expired
-            stratifiers = combine_criteria_groups(stratifiers, cached_stratifiers);
-        // adding all the criteria to the ones already in criteria_groups
-        } else {
-            //not cached or expired
-            shared_state.sites_to_query.lock().await.insert(site); // inserting the site into the set of sites to query
         }
     }
 
