@@ -122,8 +122,24 @@ pub async fn main() {
         TcpListener::bind(CONFIG.bind_addr).await.unwrap(),
         app.into_make_service(),
     )
+    .with_graceful_shutdown(wait_for_shutdown())
     .await
     .unwrap()
+}
+
+async fn wait_for_shutdown() {
+    #[cfg(unix)]
+    {
+        // Required for proper shutdown in Docker
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        sigterm.recv().await.expect("Failed to receive SIGTERM");
+        info!("Received SIGTERM, shutting down...");
+        return
+    }
+    // On other platforms we let the OS handle the shutdown
+    #[cfg(not(unix))]
+    std::future::pending::<()>().await;
 }
 
 fn spawn_site_querying(shared_state: SharedState) {
