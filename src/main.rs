@@ -204,12 +204,25 @@ async fn post_query(shared_state: SharedState, sites: Vec<String>) -> Result<(),
     }
     let wait_count = sites.len();
     let site_display = sites.join(", ");
-    let task = create_beam_task(sites);
+    let mut task = create_beam_task(sites);
     info!("Querying sites {:?}", site_display);
-    BEAM_CLIENT
-        .post_task(&task)
-        .await
-        .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
+
+    match BEAM_CLIENT.post_task(&task).await {
+        Ok(()) => (),
+        Err(beam_lib::BeamError::InvalidReceivers(invalid)) => {
+            task.to.retain(|t| !invalid.contains(&t.proxy_id()));
+            BEAM_CLIENT
+                .post_task(&task)
+                .await
+                .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
+        }
+        Err(e) => {
+            return Err(PrismError::BeamError(format!(
+                "Unable to post a query: {}",
+                e
+            )));
+        }
+    }
 
     info!("Posted task {}", task.id);
 
