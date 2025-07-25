@@ -128,8 +128,13 @@ pub async fn main() {
 
 fn spawn_site_querying(shared_state: SharedState) {
     tokio::spawn(async move {
-        if let Err(e) = query_sites(shared_state.clone(), Some(&CONFIG.sites)).await {
-            warn!("Failed to query sites: {e}. Will try again later");
+        loop {
+            if let Err(e) = query_sites(shared_state.clone(), Some(&CONFIG.sites)).await {
+                warn!("Failed to query sites: {e}. Will try again in 5 seconds");
+            } else {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
         loop {
             if let Err(e) = query_sites(shared_state.clone(), None).await {
