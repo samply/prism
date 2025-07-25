@@ -132,10 +132,11 @@ async fn wait_for_shutdown() {
     {
         // Required for proper shutdown in Docker
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
         sigterm.recv().await.expect("Failed to receive SIGTERM");
         info!("Received SIGTERM, shutting down...");
-        return
+        return;
     }
     // On other platforms we let the OS handle the shutdown
     #[cfg(not(unix))]
@@ -177,8 +178,7 @@ async fn handle_get_criteria(
 
     for site in sites {
         debug!("Request for site {}", &site);
-        match shared_state.criteria_cache.lock().await.cache.get(&site)
-        {
+        match shared_state.criteria_cache.lock().await.cache.get(&site) {
             Some(cached) => {
                 debug!("Results for site {} found in cache", &site);
 
