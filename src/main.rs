@@ -176,9 +176,11 @@ async fn handle_get_criteria(
         sites = CONFIG.sites.clone();
     }
 
+    let criteria_cache = shared_state.criteria_cache.lock().await;
+    
     for site in sites {
         debug!("Request for site {}", &site);
-        match shared_state.criteria_cache.lock().await.cache.get(&site) {
+        match criteria_cache.cache.get(&site) {
             Some(cached) => {
                 debug!("Results for site {} found in cache", &site);
 
