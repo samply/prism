@@ -177,7 +177,7 @@ async fn handle_get_criteria(
     }
 
     let criteria_cache = shared_state.criteria_cache.lock().await;
-    
+
     for site in sites {
         debug!("Request for site {}", &site);
         match criteria_cache.cache.get(&site) {
