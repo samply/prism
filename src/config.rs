@@ -102,7 +102,7 @@ fn get_query() -> String {
     let body_file_name = format!("resources/body_{}.json", CliArgs::parse().project);
 
     fs::read_to_string(&body_file_name)
-        .unwrap_or_else(|_| panic!("File {} can't be read", &body_file_name))      
+        .unwrap_or_else(|_| panic!("File {} can't be read", &body_file_name))
 }
 
 fn parse_cors(v: &str) -> Result<AllowOrigin, reqwest::header::InvalidHeaderValue> {
