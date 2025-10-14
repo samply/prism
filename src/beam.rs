@@ -1,18 +1,12 @@
 use crate::config::CONFIG;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use beam_lib::{AppId, MsgId, RawString, TaskRequest};
-use uuid::Uuid;
 
 pub fn create_beam_task(target_sites: Vec<String>) -> TaskRequest<RawString> {
     let target_app = &CONFIG.target_app;
     let id = MsgId::new();
     let proxy_id = &CONFIG.beam_app_id_long.proxy_id();
-    let query_encoded: String = BASE64.encode(
-        CONFIG
-            .query_unencoded
-            .replace("{{LIBRARY_UUID}}", Uuid::new_v4().to_string().as_str())
-            .replace("{{MEASURE_UUID}}", Uuid::new_v4().to_string().as_str()),
-    );
+    let query_encoded: String = BASE64.encode(&CONFIG.query);
     let broker_id = proxy_id
         .as_ref()
         .split_once('.')
