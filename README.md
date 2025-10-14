@@ -74,8 +74,8 @@ curl -v -X POST -H "Content-Type: application/json" --data '{"sites": []}'  http
 :construction: This tool is still under intensive development. Features on the roadmap are:
 
 - [ ] Storage temperature stratifier
-- [ ] GBN query 
-- [ ] DKTK query
+- [X] GBN query 
+- [X] DKTK query
 
 
 ## License
