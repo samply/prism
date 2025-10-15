@@ -1,6 +1,6 @@
 [package]
 name = "prism"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -13,7 +13,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "def
 serde = { version = "1.0.152", features = ["serde_derive"] }
 serde_json = "1.0.96"
 thiserror = "2.0.3"
-rand = { default-features = false, version = "0.9.0" }
 chrono = "0.4.31"
 tokio = { version = "1.25.0", default-features = false, features = ["signal", "rt-multi-thread", "macros"] }
 beam-lib = { git = "https://github.com/samply/beam", branch = "develop", features = ["http-util"] }
@@ -31,7 +30,6 @@ once_cell = "1.18"
 
 # Command Line Interface
 clap = { version = "4.0", features = ["std", "env", "derive", "help"] }
-uuid = "1.8.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

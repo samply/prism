@@ -75,7 +75,7 @@ pub(crate) struct Config {
     pub cors_origin: AllowOrigin,
     pub project: String,
     pub bind_addr: SocketAddr,
-    pub query_unencoded: String,
+    pub query: String,
     pub target_app: String,
 }
 
@@ -91,29 +91,18 @@ impl Config {
             cors_origin: cli_args.cors_origin,
             project: cli_args.project,
             bind_addr: cli_args.bind_addr,
-            query_unencoded: get_query_unencoded(),
+            query: get_query(),
             target_app: cli_args.target_app,
         };
         Ok(config)
     }
 }
 
-fn get_query_unencoded() -> String {
-    let cql_file_name: String = format!("resources/query_{}.cql", CliArgs::parse().project);
+fn get_query() -> String {
     let body_file_name = format!("resources/body_{}.json", CliArgs::parse().project);
 
     fs::read_to_string(&body_file_name)
         .unwrap_or_else(|_| panic!("File {} can't be read", &body_file_name))
-        .replace(
-            "{{LIBRARY_ENCODED}}",
-            BASE64
-                .encode(
-                    fs::read_to_string(&cql_file_name)
-                        .unwrap_or_else(|_| panic!("File {} can't be read", &cql_file_name))
-                        .as_str(),
-                )
-                .as_str(),
-        )
 }
 
 fn parse_cors(v: &str) -> Result<AllowOrigin, reqwest::header::InvalidHeaderValue> {

@@ -122,14 +122,36 @@ pub async fn main() {
         TcpListener::bind(CONFIG.bind_addr).await.unwrap(),
         app.into_make_service(),
     )
+    .with_graceful_shutdown(wait_for_shutdown())
     .await
     .unwrap()
 }
 
+async fn wait_for_shutdown() {
+    #[cfg(unix)]
+    {
+        // Required for proper shutdown in Docker
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        sigterm.recv().await.expect("Failed to receive SIGTERM");
+        info!("Received SIGTERM, shutting down...");
+        return;
+    }
+    // On other platforms we let the OS handle the shutdown
+    #[cfg(not(unix))]
+    std::future::pending::<()>().await;
+}
+
 fn spawn_site_querying(shared_state: SharedState) {
     tokio::spawn(async move {
-        if let Err(e) = query_sites(shared_state.clone(), Some(&CONFIG.sites)).await {
-            warn!("Failed to query sites: {e}. Will try again later");
+        loop {
+            if let Err(e) = query_sites(shared_state.clone(), Some(&CONFIG.sites)).await {
+                warn!("Failed to query sites: {e}. Will try again in 5 seconds");
+            } else {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
         loop {
             if let Err(e) = query_sites(shared_state.clone(), None).await {
@@ -154,36 +176,29 @@ async fn handle_get_criteria(
         sites = CONFIG.sites.clone();
     }
 
+    let criteria_cache = shared_state.criteria_cache.lock().await;
+
     for site in sites {
         debug!("Request for site {}", &site);
-        let stratifiers_from_cache = match shared_state.criteria_cache.lock().await.cache.get(&site)
-        {
+        match criteria_cache.cache.get(&site) {
             Some(cached) => {
-                //Prism only uses the cached results if they are not expired
                 debug!("Results for site {} found in cache", &site);
-                if SystemTime::now().duration_since(cached.1).unwrap() < CRITERIACACHE_TTL {
-                    Some(cached.0.clone())
-                } else {
+
+                // Include cached result in response even if expired, so the client gets something
+                stratifiers = combine_criteria_groups(stratifiers, cached.0.clone());
+
+                if SystemTime::now().duration_since(cached.1).unwrap() >= CRITERIACACHE_TTL {
                     debug!(
                         "Results for site {} in cache sadly expired, will query again",
                         &site
                     );
-                    None
+                    shared_state.sites_to_query.lock().await.insert(site);
                 }
             }
             None => {
-                debug!("Results for site {} in cache not found in cache", &site);
-                None
+                debug!("Results for site {} not found in cache, will query", &site);
+                shared_state.sites_to_query.lock().await.insert(site);
             }
-        };
-
-        if let Some(cached_stratifiers) = stratifiers_from_cache {
-            //cached and not expired
-            stratifiers = combine_criteria_groups(stratifiers, cached_stratifiers);
-        // adding all the criteria to the ones already in criteria_groups
-        } else {
-            //not cached or expired
-            shared_state.sites_to_query.lock().await.insert(site); // inserting the site into the set of sites to query
         }
     }
 
@@ -204,12 +219,25 @@ async fn post_query(shared_state: SharedState, sites: Vec<String>) -> Result<(),
     }
     let wait_count = sites.len();
     let site_display = sites.join(", ");
-    let task = create_beam_task(sites);
+    let mut task = create_beam_task(sites);
     info!("Querying sites {:?}", site_display);
-    BEAM_CLIENT
-        .post_task(&task)
-        .await
-        .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
+
+    match BEAM_CLIENT.post_task(&task).await {
+        Ok(()) => (),
+        Err(beam_lib::BeamError::InvalidReceivers(invalid)) => {
+            task.to.retain(|t| !invalid.contains(&t.proxy_id()));
+            BEAM_CLIENT
+                .post_task(&task)
+                .await
+                .map_err(|e| PrismError::BeamError(format!("Unable to post a query: {}", e)))?;
+        }
+        Err(e) => {
+            return Err(PrismError::BeamError(format!(
+                "Unable to post a query: {}",
+                e
+            )));
+        }
+    }
 
     info!("Posted task {}", task.id);
 
