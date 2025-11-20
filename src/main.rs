@@ -136,7 +136,6 @@ async fn wait_for_shutdown() {
             signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
         sigterm.recv().await.expect("Failed to receive SIGTERM");
         info!("Received SIGTERM, shutting down...");
-        return;
     }
     // On other platforms we let the OS handle the shutdown
     #[cfg(not(unix))]
@@ -300,7 +299,7 @@ async fn get_results(
     }
     let mut stream = async_sse::decode(
         resp.bytes_stream()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(|e| io::Error::other(e))
             .into_async_read(),
     );
     while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
