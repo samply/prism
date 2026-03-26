@@ -49,7 +49,7 @@ struct CliArgs {
 
     /// Where to allow cross-origin resourse sharing from
     #[clap(long, env, value_parser = parse_cors)]
-    pub cors_origin: AllowOrigin,
+    pub cors_origin: Option<AllowOrigin>,
 
     /// Project name
     #[clap(long, env)]
@@ -70,7 +70,7 @@ pub(crate) struct Config {
     pub beam_app_id_long: AppId,
     pub api_key: String,
     pub sites: Vec<String>,
-    pub cors_origin: AllowOrigin,
+    pub cors_origin: Option<AllowOrigin>,
     pub project: String,
     pub bind_addr: SocketAddr,
     pub query: String,
