@@ -108,15 +108,20 @@ pub async fn main() {
 
     spawn_site_querying(shared_state.clone());
 
-    let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
-        .allow_origin(CONFIG.cors_origin.clone())
-        .allow_headers([header::CONTENT_TYPE]);
-
     let app = Router::new()
         .route("/criteria", post(handle_get_criteria)) //here Lens asks for criteria for sites in its configuration
-        .with_state(shared_state)
-        .layer(cors);
+        .with_state(shared_state);
+
+    let app = match CONFIG.cors_origin.clone() {
+        Some(cors_origin) => {
+            let cors = CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST])
+                .allow_origin(cors_origin)
+                .allow_headers([header::CONTENT_TYPE]);
+            app.layer(cors)
+        }
+        None => app,
+    };
 
     axum::serve(
         TcpListener::bind(CONFIG.bind_addr).await.unwrap(),

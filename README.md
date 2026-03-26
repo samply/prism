@@ -36,8 +36,6 @@ The following environment variables are mandatory for the usage of Prism.
     This application's beam API key [env: API_KEY=]
 --sites <SITES>
     Comma separated list of sites to initially query [env: SITES=]
---cors-origin <CORS_ORIGIN>
-    Where to allow cross-origin resourse sharing from [env: CORS_ORIGIN=]
 --project <PROJECT>
     Project name [env: PROJECT=]
 ```
@@ -51,6 +49,8 @@ The following environment variables are mandatory for the usage of Prism.
     Target application name [env: TARGET_APP=] [default: focus]
 --bind-addr <BIND_ADDR>
     The socket address this server will bind to [env: BIND_ADDR=] [default: 0.0.0.0:8080]
+--cors-origin <CORS_ORIGIN>
+    Where to allow cross-origin resourse sharing from [env: CORS_ORIGIN=]
 ```
 
 
