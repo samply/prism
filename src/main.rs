@@ -8,9 +8,8 @@ mod measure_report;
 use crate::errors::PrismError;
 use crate::{config::CONFIG, measure_report::extract_criteria, measure_report::MeasureReport};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use futures_util::{StreamExt as _, TryStreamExt};
+use futures_util::StreamExt as _;
 use std::collections::HashSet;
-use std::io;
 use std::process::exit;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -108,15 +107,20 @@ pub async fn main() {
 
     spawn_site_querying(shared_state.clone());
 
-    let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
-        .allow_origin(CONFIG.cors_origin.clone())
-        .allow_headers([header::CONTENT_TYPE]);
-
     let app = Router::new()
         .route("/criteria", post(handle_get_criteria)) //here Lens asks for criteria for sites in its configuration
-        .with_state(shared_state)
-        .layer(cors);
+        .with_state(shared_state);
+
+    let app = match CONFIG.cors_origin.clone() {
+        Some(cors_origin) => {
+            let cors = CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST])
+                .allow_origin(cors_origin)
+                .allow_headers([header::CONTENT_TYPE]);
+            app.layer(cors)
+        }
+        None => app,
+    };
 
     axum::serve(
         TcpListener::bind(CONFIG.bind_addr).await.unwrap(),
@@ -136,7 +140,6 @@ async fn wait_for_shutdown() {
             signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
         sigterm.recv().await.expect("Failed to receive SIGTERM");
         info!("Received SIGTERM, shutting down...");
-        return;
     }
     // On other platforms we let the OS handle the shutdown
     #[cfg(not(unix))]
@@ -298,12 +301,8 @@ async fn get_results(
             resp.text().await.unwrap_or_else(|e| e.to_string()),
         ));
     }
-    let mut stream = async_sse::decode(
-        resp.bytes_stream()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-            .into_async_read(),
-    );
-    while let Some(Ok(async_sse::Event::Message(msg))) = stream.next().await {
+    let mut stream = sse_stream::SseStream::from_byte_stream(resp.bytes_stream());
+    while let Some(Ok(msg)) = stream.next().await {
         let (from, measure_report) = match decode_result(&msg) {
             Ok(v) => v,
             Err(PrismError::UnexpectedWorkStatus(beam_lib::WorkStatus::Claimed)) => {
@@ -342,9 +341,10 @@ async fn get_results(
     Ok(())
 }
 
-fn decode_result(msg: &async_sse::Message) -> Result<(AppId, MeasureReport), PrismError> {
+fn decode_result(msg: &sse_stream::Sse) -> Result<(AppId, MeasureReport), PrismError> {
+    let data = msg.data.as_deref().unwrap_or_default();
     let result: TaskResult<RawString> =
-        serde_json::from_slice(msg.data()).map_err(PrismError::DeserializationError)?;
+        serde_json::from_slice(data.as_bytes()).map_err(PrismError::DeserializationError)?;
     match result.status {
         beam_lib::WorkStatus::Succeeded => {}
         yep => {
