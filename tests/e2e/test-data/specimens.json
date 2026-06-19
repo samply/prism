@@ -1,0 +1,2 @@
+{"resourceType":"Specimen","id":"spec1","type":{"coding":[{"system":"https://fhir.bbmri.de/CodeSystem/SampleMaterialType","code":"blood-plasma"}]}}
+{"resourceType":"Specimen","id":"spec2","type":{"coding":[{"system":"https://fhir.bbmri.de/CodeSystem/SampleMaterialType","code":"blood-serum"}]}}
